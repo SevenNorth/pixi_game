@@ -1,9 +1,9 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
+
 // webpack.dev.js
-const path = require('path')
-const {
-  merge
-} = require('webpack-merge')
-const baseConfig = require('./webpack.config.js')
+const path = require('path');
+const { merge } = require('webpack-merge');
+const baseConfig = require('./webpack.config.js');
 
 // 合并公共配置,并添加开发环境配置
 module.exports = merge(baseConfig, {
@@ -16,7 +16,7 @@ module.exports = merge(baseConfig, {
     hot: true,
     historyApiFallback: true, // 解决history路由404问题
     static: {
-      directory: path.join(__dirname, "../public"), //托管静态资源public文件夹
-    }
+      directory: path.join(__dirname, '../public'), //托管静态资源public文件夹
+    },
   },
-})
+});
