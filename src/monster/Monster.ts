@@ -24,7 +24,7 @@ class Monster {
     this.target = props.target;
     this.vx = 0;
     this.vy = 0;
-    this.speed = 3;
+    this.speed = 2;
     this.x = _.random(0, props.width);
     this.y = _.random(0, props.height);
     this.init();
@@ -34,7 +34,6 @@ class Monster {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const imgUrl = require('../assets/monster_ghost.gif');
     const texture = await Assets.load(imgUrl);
-    console.log('🚀-fjf : texture', texture);
     // this.sprite = new Sprite(texture);
     this.sprite = Sprite.from(imgUrl);
     this.sprite.x = this.x;
@@ -46,22 +45,23 @@ class Monster {
     if (m.sprite && m.target) {
       const { x: tx, y: ty } = m.target;
       const { x: mx, y: my } = m;
-      let vx = 1,
-        vy = 1;
+      // direction
+      let d_x = 1,
+        d_y = 1;
       if (tx - mx > 0) {
-        vx = 1;
+        d_x = 1;
       } else {
-        vx = -1;
+        d_x = -1;
       }
       if (ty - my > 0) {
-        vy = 1;
+        d_y = 1;
       } else {
-        vy = -1;
+        d_y = -1;
       }
-      m.x += vx * m.speed;
-      m.y += vy * m.speed;
-      m.sprite.x = vx * m.speed;
-      m.sprite.y = vy * m.speed;
+      m.x += d_x * m.speed;
+      m.y += d_y * m.speed;
+      m.sprite.x += d_x * m.speed;
+      m.sprite.y += d_y * m.speed;
     }
   }
 }
