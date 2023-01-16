@@ -1,5 +1,6 @@
 import './index.less';
 import init from './functions/init';
+import Player from './player';
 const main = (): void => {
   const root = document.getElementById('root');
   const width = root?.clientWidth,
@@ -8,9 +9,12 @@ const main = (): void => {
     width,
     height,
     background: '#1099bb',
+    antialias: true,
+    resolution: 1,
   });
-  console.log('🚀-fjf : app', app);
   root?.appendChild(app.view as unknown as Document);
+  const p1 = new Player(app);
+  app.ticker.add(() => p1.move(p1));
 };
 main();
 export default main;
