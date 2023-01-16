@@ -8,6 +8,12 @@ interface ISprite extends Sprite {
   fps: number;
 }
 
+interface PropsType {
+  app: Application;
+  x: number;
+  y: number;
+}
+
 class Player {
   app: Application;
   states: {
@@ -27,8 +33,8 @@ class Player {
   y: number;
   speed: number;
 
-  constructor(app: Application) {
-    this.app = app;
+  constructor(props: PropsType) {
+    this.app = props.app;
     this.states = {
       down: 0,
       left: 4,
@@ -42,8 +48,8 @@ class Player {
     this.vx = 0;
     this.vy = 0;
     this.speed = 3;
-    this.x = 500;
-    this.y = 500;
+    this.x = props.x;
+    this.y = props.y;
     this.init();
   }
 
@@ -54,8 +60,8 @@ class Player {
     const frames = su.filmstrip(imgUrl, 48, 48);
     this.sprite = su.sprite(frames) as ISprite;
     this.sprite.fps = 24;
-    this.sprite.x = 500;
-    this.sprite.y = 500;
+    this.sprite.x = this.x;
+    this.sprite.y = this.y;
     this.app.stage.addChild(this.sprite);
     this.bindKeyEvent();
   }

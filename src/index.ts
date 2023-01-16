@@ -13,7 +13,11 @@ const main = (): void => {
     resolution: 1,
   });
   root?.appendChild(app.view as unknown as Document);
-  const p1 = new Player(app);
+  const p1 = new Player({
+    app,
+    x: (width ?? 1600) / 2,
+    y: (height ?? 800) / 2,
+  });
   app.ticker.add(() => p1.move(p1));
 };
 main();
