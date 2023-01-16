@@ -12,6 +12,10 @@ interface PropsType {
   app: Application;
   x: number;
   y: number;
+  size: {
+    width: number;
+    height: number;
+  };
 }
 
 class Player {
@@ -32,6 +36,10 @@ class Player {
   x: number;
   y: number;
   speed: number;
+  size: {
+    width: number;
+    height: number;
+  };
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -50,6 +58,7 @@ class Player {
     this.speed = 3;
     this.x = props.x;
     this.y = props.y;
+    this.size = props.size;
     this.init();
   }
 
@@ -57,7 +66,7 @@ class Player {
     const imgUrl = 'http://sevennorth.lovinghlx.cn/game-source/pikaqiu.png';
     await Assets.load(imgUrl);
     const su = new SpriteUtilities();
-    const frames = su.filmstrip(imgUrl, 48, 48);
+    const frames = su.filmstrip(imgUrl, this.size.width, this.size.height);
     this.sprite = su.sprite(frames) as ISprite;
     this.sprite.fps = 24;
     this.sprite.x = this.x;

@@ -18,6 +18,10 @@ const main = (): void => {
     app,
     x: width / 2,
     y: height / 2,
+    size: {
+      width: 48,
+      height: 48,
+    },
   });
   app.ticker.add(() => person.move(person));
   const monster = new Monster({

@@ -1,4 +1,4 @@
-import { Sprite, Assets, Application } from 'pixi.js';
+import { Sprite, Texture, Application } from 'pixi.js';
 import _ from 'lodash';
 import Player from '@/player/Player';
 
@@ -18,6 +18,10 @@ class Monster {
   y: number;
   speed: number;
   target: Player;
+  size!: {
+    width: number;
+    height: number;
+  };
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -33,9 +37,12 @@ class Monster {
   async init() {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const imgUrl = require('../assets/monster_ghost.gif');
-    const texture = await Assets.load(imgUrl);
-    // this.sprite = new Sprite(texture);
-    this.sprite = Sprite.from(imgUrl);
+    const texture = Texture.from(imgUrl);
+    this.size = {
+      width: texture.width,
+      height: texture.height,
+    };
+    this.sprite = new Sprite(texture);
     this.sprite.x = this.x;
     this.sprite.y = this.y;
     this.app.stage.addChild(this.sprite);
