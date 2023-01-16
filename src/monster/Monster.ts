@@ -24,7 +24,7 @@ class Monster {
     this.target = props.target;
     this.vx = 0;
     this.vy = 0;
-    this.speed = 2;
+    this.speed = 1;
     this.x = _.random(0, props.width);
     this.y = _.random(0, props.height);
     this.init();
