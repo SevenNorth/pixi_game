@@ -1,10 +1,11 @@
 import './index.less';
 import init from './functions/init';
-import Player from './player';
+import Player from './player/Player';
+import Monster from './monster/Monster';
 const main = (): void => {
   const root = document.getElementById('root');
-  const width = root?.clientWidth,
-    height = root?.clientHeight;
+  const width = root?.clientWidth ?? 1600,
+    height = root?.clientHeight ?? 800;
   const app = init({
     width,
     height,
@@ -13,12 +14,19 @@ const main = (): void => {
     resolution: 1,
   });
   root?.appendChild(app.view as unknown as Document);
-  const p1 = new Player({
+  const person = new Player({
     app,
-    x: (width ?? 1600) / 2,
-    y: (height ?? 800) / 2,
+    x: width / 2,
+    y: height / 2,
   });
-  app.ticker.add(() => p1.move(p1));
+  app.ticker.add(() => person.move(person));
+  const monster = new Monster({
+    width,
+    height,
+    app,
+    target: person,
+  });
+  app.ticker.add(() => monster.move(monster));
 };
 main();
 export default main;
