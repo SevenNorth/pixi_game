@@ -41,23 +41,36 @@ class Monster {
     this.app.stage.addChild(this.sprite);
   }
 
+  getDirection(target: Player, self: Monster) {
+    const { x: tx, y: ty } = target;
+    const { x: mx, y: my } = self;
+    // direction
+    let d_x = 1,
+      d_y = 1;
+    if (tx - mx > 0) {
+      d_x = 1;
+    } else if (tx - mx < 0) {
+      d_x = -1;
+    } else {
+      d_x = 0;
+    }
+    if (ty - my > 0) {
+      d_y = 1;
+    } else if (ty - my < 0) {
+      d_y = -1;
+    } else {
+      d_y = 0;
+    }
+
+    return {
+      d_x,
+      d_y,
+    };
+  }
+
   move(m: Monster) {
     if (m.sprite && m.target) {
-      const { x: tx, y: ty } = m.target;
-      const { x: mx, y: my } = m;
-      // direction
-      let d_x = 1,
-        d_y = 1;
-      if (tx - mx > 0) {
-        d_x = 1;
-      } else {
-        d_x = -1;
-      }
-      if (ty - my > 0) {
-        d_y = 1;
-      } else {
-        d_y = -1;
-      }
+      const { d_x, d_y } = m.getDirection(m.target, m);
       m.x += d_x * m.speed;
       m.y += d_y * m.speed;
       m.sprite.x += d_x * m.speed;
