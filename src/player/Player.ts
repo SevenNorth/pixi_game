@@ -136,12 +136,12 @@ class Player {
     };
   }
 
-  move(p: Player) {
-    if (p.sprite) {
-      p.sprite.x += p.vx ?? 0;
-      p.sprite.y += p.vy ?? 0;
-      p.x += p.vx ?? 0;
-      p.y += p.vy ?? 0;
+  move() {
+    if (this.sprite) {
+      this.sprite.x += this.vx ?? 0;
+      this.sprite.y += this.vy ?? 0;
+      this.x += this.vx ?? 0;
+      this.y += this.vy ?? 0;
     }
   }
 }

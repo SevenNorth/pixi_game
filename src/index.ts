@@ -23,14 +23,14 @@ const main = (): void => {
       height: 48,
     },
   });
-  app.ticker.add(() => person.move(person));
+  app.ticker.add(person.move, person);
   const monster = new Monster({
     width,
     height,
     app,
     target: person,
   });
-  app.ticker.add(() => monster.move(monster));
+  app.ticker.add(monster.move, monster);
 };
 main();
 export default main;

@@ -49,8 +49,8 @@ class Monster {
   }
 
   getDirection(target: Player, self: Monster) {
-    const { x: tx, y: ty } = target;
-    const { x: mx, y: my } = self;
+    const { x: tx, y: ty } = this.target;
+    const { x: mx, y: my } = this;
     // direction
     let d_x = 1,
       d_y = 1;
@@ -75,13 +75,13 @@ class Monster {
     };
   }
 
-  move(m: Monster) {
-    if (m.sprite && m.target) {
-      const { d_x, d_y } = m.getDirection(m.target, m);
-      m.x += d_x * m.speed;
-      m.y += d_y * m.speed;
-      m.sprite.x += d_x * m.speed;
-      m.sprite.y += d_y * m.speed;
+  move() {
+    if (this.sprite && this.target) {
+      const { d_x, d_y } = this.getDirection(this.target, this);
+      this.x += d_x * this.speed;
+      this.y += d_y * this.speed;
+      this.sprite.x += d_x * this.speed;
+      this.sprite.y += d_y * this.speed;
     }
   }
 }
