@@ -4,6 +4,7 @@ import Player from './player/Player';
 import Monster from './monster/Monster';
 import createSimpleSprite from './utils/createSimpleSprite';
 const main = () => {
+  // let monsterCreator;
   const gameState = {
     palying: false,
     score: 0,
@@ -40,6 +41,11 @@ const main = () => {
       width: 48,
       height: 48,
     },
+    // person定位锚点在左上角
+    max: {
+      x: width - 48,
+      y: height - 48,
+    },
   });
 
   const startGame = () => {
@@ -58,6 +64,23 @@ const main = () => {
       },
     });
     app.ticker.add(monster.move, monster);
+    // monsterCreator = setInterval(() => {
+    //   const monster = new Monster({
+    //     width,
+    //     height,
+    //     app,
+    //     target: person,
+    //     size: {
+    //       width: 48,
+    //       height: 64,
+    //     },
+    //   });
+    //   app.ticker.add(monster.move, monster);
+    // }, 3000);
+  };
+
+  const endGame = () => {
+    console.log('gameOver');
   };
 
   // 添加开始按钮

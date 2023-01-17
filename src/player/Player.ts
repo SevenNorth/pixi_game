@@ -11,6 +11,10 @@ interface PropsType {
     width: number;
     height: number;
   };
+  max: {
+    x: number;
+    y: number;
+  };
 }
 
 class Player {
@@ -36,6 +40,10 @@ class Player {
     height: number;
   };
   face!: 'up' | 'right' | 'down' | 'left';
+  max!: {
+    x: number;
+    y: number;
+  };
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -55,6 +63,7 @@ class Player {
     this.x = props.x;
     this.y = props.y;
     this.size = props.size;
+    this.max = props.max;
     this.face = 'down';
     this.init();
   }
@@ -65,10 +74,11 @@ class Player {
     const su = new SpriteUtilities();
     const frames = su.filmstrip(imgUrl, this.size.width, this.size.height);
     this.sprite = su.sprite(frames) as ISprite;
-    this.sprite.fps = 24;
+    this.sprite.fps = 12;
     this.sprite.x = this.x;
     this.sprite.y = this.y;
     this.app.stage.addChild(this.sprite);
+    this.sprite.playAnimation(this.states.walkDown);
     this.bindKeyEvent();
   }
 
@@ -139,10 +149,24 @@ class Player {
 
   move() {
     if (this.sprite) {
-      this.sprite.x += this.vx ?? 0;
-      this.sprite.y += this.vy ?? 0;
-      this.x += this.vx ?? 0;
-      this.y += this.vy ?? 0;
+      let next_X = this.x + (this.vx ?? 0);
+      let next_y = this.y + (this.vy ?? 0);
+      if (next_X < 0) {
+        next_X = 0;
+      }
+      if (next_X > this.max.x) {
+        next_X = this.max.x;
+      }
+      if (next_y < 0) {
+        next_y = 0;
+      }
+      if (next_y > this.max.y) {
+        next_y = this.max.y;
+      }
+      this.x = next_X;
+      this.y = next_y;
+      this.sprite.x = next_X;
+      this.sprite.y = next_y;
     }
   }
 }
