@@ -135,7 +135,6 @@ const main = () => {
     gameState.playing = true;
     operateGroup.visible = false;
     root && (root.style.cursor = 'none');
-    app.ticker.add(person.move, person);
     _.each(monsterList, m => {
       m.sprite.removeFromParent();
       m.sprite.destroy();
