@@ -126,8 +126,6 @@ class Monster {
       Math.pow(c_center.x - t_center.x, 2) + Math.pow(c_center.y - t_center.y, 2),
     );
 
-    console.log('🚀-fjf : safeDistance:', safeDistance, 'd:', d);
-
     if (d < safeDistance) {
       isCatched = true;
     }
@@ -142,7 +140,6 @@ class Monster {
       const isCatched = this.hitTestRectangle(targetBounds, compareBounds);
       if (isCatched) {
         this.endGame();
-        this.app.ticker.remove(this.move, this);
         return;
       }
       const { d_x, d_y } = this.getDirection();

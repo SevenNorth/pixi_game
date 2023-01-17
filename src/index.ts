@@ -1,12 +1,14 @@
 import './index.less';
-import { Application, Container } from 'pixi.js';
+import { Application, Container, Prepare } from 'pixi.js';
 import Player from './player/Player';
 import Monster from './monster/Monster';
 import createSimpleSprite from './utils/createSimpleSprite';
+import _ from 'lodash';
 const main = () => {
-  // let monsterCreator;
+  let monsterCreator: string | number | NodeJS.Timer | undefined;
+  let monsterList: Monster[] = [];
   const gameState = {
-    palying: false,
+    playing: false,
     score: 0,
   };
   // 搭建场景
@@ -46,14 +48,11 @@ const main = () => {
       x: width - 48,
       y: height - 48,
     },
+    gameState,
   });
 
-  const startGame = () => {
-    operateGroup.visible = false;
-    monstersGroup.visible = true;
-    root && (root.style.cursor = 'none');
-    app.ticker.add(person.move, person);
-    const monster = new Monster({
+  const createMonster = () => {
+    return new Monster({
       width,
       height,
       app,
@@ -64,20 +63,25 @@ const main = () => {
       },
       endGame,
     });
+  };
+
+  const startGame = () => {
+    operateGroup.visible = false;
+    monstersGroup.visible = true;
+    gameState.playing = true;
+    root && (root.style.cursor = 'none');
+    app.ticker.add(person.move, person);
+    const monster = createMonster();
     app.ticker.add(monster.move, monster);
-    // monsterCreator = setInterval(() => {
-    //   const monster = new Monster({
-    //     width,
-    //     height,
-    //     app,
-    //     target: person,
-    //     size: {
-    //       width: 48,
-    //       height: 64,
-    //     },
-    //   });
-    //   app.ticker.add(monster.move, monster);
-    // }, 3000);
+    monsterList.push(monster);
+    if (monsterCreator) {
+      clearInterval(monsterCreator);
+    }
+    monsterCreator = setInterval(() => {
+      const monster = createMonster();
+      monsterList.push(monster);
+      app.ticker.add(monster.move, monster);
+    }, 3000);
   };
 
   const endGame = () => {
@@ -86,6 +90,35 @@ const main = () => {
     startBtn.visible = false;
     overLabel.visible = true;
     restartBtn.visible = true;
+    gameState.playing = false;
+    clearInterval(monsterCreator);
+    _.each(monsterList, m => {
+      app.ticker.remove(m.move, m);
+    });
+    person.speed = 0;
+    person.vx = 0;
+    person.vy = 0;
+    app.ticker.remove(person.move, person);
+  };
+
+  const restartGame = () => {
+    person.x = width / 2;
+    person.y = height / 2;
+    person.speed = 3;
+    person.sprite.x = width / 2;
+    person.sprite.y = height / 2;
+    person.sprite.playAnimation(person.states.walkDown);
+    gameState.score = 0;
+    gameState.playing = true;
+    operateGroup.visible = false;
+    root && (root.style.cursor = 'none');
+    app.ticker.add(person.move, person);
+    _.each(monsterList, m => {
+      m.sprite.removeFromParent();
+      m.sprite.destroy();
+    });
+    monsterList = [];
+    startGame();
   };
 
   // 添加开始按钮
@@ -116,6 +149,7 @@ const main = () => {
   restartBtn.x = width / 2 + 100;
   restartBtn.y = height / 2 - 60;
   restartBtn.visible = false;
+  restartBtn.onclick = restartGame;
   operateGroup.addChild(restartBtn);
 
   // 添加各个分组

@@ -15,6 +15,10 @@ interface PropsType {
     x: number;
     y: number;
   };
+  gameState: {
+    playing: boolean;
+    score: number;
+  };
 }
 
 class Player {
@@ -44,6 +48,10 @@ class Player {
     x: number;
     y: number;
   };
+  gameState: {
+    playing: boolean;
+    score: number;
+  };
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -65,6 +73,7 @@ class Player {
     this.size = props.size;
     this.max = props.max;
     this.face = 'down';
+    this.gameState = props.gameState;
     this.init();
   }
 
@@ -90,6 +99,7 @@ class Player {
 
     //左箭头键 按下
     left.press = () => {
+      if (!this.gameState.playing) return;
       //播放精灵的 walkLeft 动画序列并设置精灵的速度
       this.sprite.playAnimation(this.states.walkLeft);
       this.vx = -this.speed;
@@ -98,6 +108,7 @@ class Player {
     };
     //左箭头键 释放
     left.release = () => {
+      if (!this.gameState.playing) return;
       //如果左箭头已被释放，右箭头未按下，并且精灵没有垂直移动，
       //则将 vx 设置为0来停止精灵移动，然后显示精灵的静态状态 left
       if (!right.isDown && this.vy === 0) {
@@ -108,12 +119,14 @@ class Player {
     //其余的箭头键遵循相同的格式
     //Up
     up.press = () => {
+      if (!this.gameState.playing) return;
       this.sprite.playAnimation(this.states.walkUp);
       this.vy = -this.speed;
       this.vx = 0;
       this.face = 'up';
     };
     up.release = () => {
+      if (!this.gameState.playing) return;
       if (!down.isDown && this.vx === 0) {
         this.vy = 0;
         this.sprite.show(this.states.up);
@@ -121,12 +134,14 @@ class Player {
     };
     //Right
     right.press = () => {
+      if (!this.gameState.playing) return;
       this.sprite.playAnimation(this.states.walkRight);
       this.vx = this.speed;
       this.vy = 0;
       this.face = 'right';
     };
     right.release = () => {
+      if (!this.gameState.playing) return;
       if (!left.isDown && this.vy === 0) {
         this.vx = 0;
         this.sprite.show(this.states.right);
@@ -134,12 +149,14 @@ class Player {
     };
     //Down
     down.press = () => {
+      if (!this.gameState.playing) return;
       this.sprite.playAnimation(this.states.walkDown);
       this.vy = this.speed;
       this.vx = 0;
       this.face = 'down';
     };
     down.release = () => {
+      if (!this.gameState.playing) return;
       if (!up.isDown && this.vx === 0) {
         this.vy = 0;
         this.sprite.show(this.states.down);
@@ -148,7 +165,7 @@ class Player {
   }
 
   move() {
-    if (this.sprite) {
+    if (this.sprite && this.gameState.playing) {
       let next_X = this.x + (this.vx ?? 0);
       let next_y = this.y + (this.vy ?? 0);
       if (next_X < 0) {
