@@ -157,5 +157,5 @@ const main = () => {
   app.stage.addChild(bulletsGroup);
   app.stage.addChild(operateGroup);
 };
-main();
+window.addEventListener('load', () => main());
 export default main;
