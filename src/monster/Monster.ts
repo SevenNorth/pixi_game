@@ -1,4 +1,4 @@
-import { Application, Assets } from 'pixi.js';
+import { Application, Assets, Container } from 'pixi.js';
 import _ from 'lodash';
 import Player from '@/player/Player';
 import SpriteUtilities from '../utils/SpriteUtilities.js';
@@ -71,7 +71,7 @@ class Monster {
     this.sprite.fps = 12;
     this.sprite.x = this.x;
     this.sprite.y = this.y;
-    this.app.stage.addChild(this.sprite);
+    (this.app.stage.getChildByName('monsters') as Container)?.addChild(this.sprite);
     this.sprite.playAnimation(this.states.walkDown);
   }
 
