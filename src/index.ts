@@ -62,6 +62,7 @@ const main = () => {
         width: 48,
         height: 64,
       },
+      endGame,
     });
     app.ticker.add(monster.move, monster);
     // monsterCreator = setInterval(() => {
@@ -80,6 +81,7 @@ const main = () => {
   };
 
   const endGame = () => {
+    root && (root.style.cursor = 'pointer');
     console.log('gameOver');
   };
 

@@ -1,4 +1,4 @@
-import { Application, Assets, Container } from 'pixi.js';
+import { Application, Assets, Container, Rectangle } from 'pixi.js';
 import _ from 'lodash';
 import Player from '@/player/Player';
 import SpriteUtilities from '../utils/SpriteUtilities.js';
@@ -13,6 +13,7 @@ interface PropsType {
     width: number;
     height: number;
   };
+  endGame: () => void;
 }
 
 class Monster {
@@ -38,6 +39,7 @@ class Monster {
     walkRight: number[];
     walkUp: number[];
   };
+  endGame: () => void;
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -58,6 +60,7 @@ class Monster {
     this.x = _.random(0, props.width);
     this.y = _.random(0, props.height);
     this.size = props.size;
+    this.endGame = props.endGame;
     this.init();
   }
 
@@ -102,8 +105,54 @@ class Monster {
     };
   }
 
+  hitTestRectangle(targetBounds: Rectangle, compareBounds: Rectangle): boolean {
+    let isCatched = false;
+    const { top, bottom, left, right } = targetBounds;
+    const {
+      top: c_top,
+      bottom: c_bottom,
+      left: c_left,
+      right: c_right,
+      width,
+      height,
+    } = compareBounds;
+
+    const pointList = [
+      {
+        x: c_left + width / 4,
+        y: c_top + height / 4,
+      },
+      {
+        x: c_right - width / 4,
+        y: c_top + height / 4,
+      },
+      {
+        x: c_right - width / 4,
+        y: c_bottom - height / 4,
+      },
+      {
+        x: c_left + width / 4,
+        y: c_bottom - height / 4,
+      },
+    ];
+    _.each(pointList, p => {
+      if (p.x > left && p.x < right && p.y > top && p.y < bottom) {
+        isCatched = true;
+      }
+    });
+    return isCatched;
+  }
+
   move() {
     if (this.sprite && this.target) {
+      const targetBounds = this.target.sprite.getBounds();
+      const compareBounds = this.sprite.getBounds();
+      const isCatched = this.hitTestRectangle(targetBounds, compareBounds);
+      if (isCatched) {
+        this.endGame();
+        this.app.ticker.remove(this.move, this);
+        return;
+      }
       const { d_x, d_y } = this.getDirection();
       this.x += d_x * this.speed;
       this.y += d_y * this.speed;
