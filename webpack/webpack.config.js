@@ -85,7 +85,7 @@ module.exports = {
     ],
   },
   resolve: {
-    extensions: ['.js', '.ts'],
+    extensions: ['.ts', '.js', '.json'],
     modules: [path.resolve(__dirname, '../node_modules')], // 查找第三方模块只在本项目的node_modules中查找
   },
   plugins: [

@@ -1,12 +1,12 @@
 import './index.less';
-import init from './functions/init';
+import { Application } from 'pixi.js';
 import Player from './player/Player';
 import Monster from './monster/Monster';
 const main = (): void => {
   const root = document.getElementById('root');
   const width = root?.clientWidth ?? 1600,
     height = root?.clientHeight ?? 800;
-  const app = init({
+  const app = new Application({
     width,
     height,
     background: '#1099bb',
@@ -29,6 +29,10 @@ const main = (): void => {
     height,
     app,
     target: person,
+    size: {
+      width: 48,
+      height: 64,
+    },
   });
   app.ticker.add(monster.move, monster);
 };

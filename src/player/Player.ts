@@ -1,12 +1,7 @@
-import { Sprite, Assets, Application } from 'pixi.js';
+import { ISprite } from '@/types';
+import { Assets, Application } from 'pixi.js';
 import { keyboard } from '../utils/keyboard.js';
 import SpriteUtilities from '../utils/SpriteUtilities.js';
-
-interface ISprite extends Sprite {
-  playAnimation: (sequenceArray: number[]) => void;
-  show: (frameNumber: number) => number;
-  fps: number;
-}
 
 interface PropsType {
   app: Application;
@@ -40,6 +35,7 @@ class Player {
     width: number;
     height: number;
   };
+  face!: 'up' | 'right' | 'down' | 'left';
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -59,6 +55,7 @@ class Player {
     this.x = props.x;
     this.y = props.y;
     this.size = props.size;
+    this.face = 'down';
     this.init();
   }
 
@@ -87,6 +84,7 @@ class Player {
       this.sprite.playAnimation(this.states.walkLeft);
       this.vx = -this.speed;
       this.vy = 0;
+      this.face = 'left';
     };
     //左箭头键 释放
     left.release = () => {
@@ -103,6 +101,7 @@ class Player {
       this.sprite.playAnimation(this.states.walkUp);
       this.vy = -this.speed;
       this.vx = 0;
+      this.face = 'up';
     };
     up.release = () => {
       if (!down.isDown && this.vx === 0) {
@@ -115,6 +114,7 @@ class Player {
       this.sprite.playAnimation(this.states.walkRight);
       this.vx = this.speed;
       this.vy = 0;
+      this.face = 'right';
     };
     right.release = () => {
       if (!left.isDown && this.vy === 0) {
@@ -127,6 +127,7 @@ class Player {
       this.sprite.playAnimation(this.states.walkDown);
       this.vy = this.speed;
       this.vx = 0;
+      this.face = 'down';
     };
     down.release = () => {
       if (!up.isDown && this.vx === 0) {
