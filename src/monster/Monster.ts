@@ -107,39 +107,31 @@ class Monster {
 
   hitTestRectangle(targetBounds: Rectangle, compareBounds: Rectangle): boolean {
     let isCatched = false;
-    const { top, bottom, left, right } = targetBounds;
-    const {
-      top: c_top,
-      bottom: c_bottom,
-      left: c_left,
-      right: c_right,
-      width,
-      height,
-    } = compareBounds;
+    const { x, y, width, height } = targetBounds;
+    const { x: c_x, y: c_y, width: c_width, height: c_height } = compareBounds;
 
-    const pointList = [
-      {
-        x: c_left + width / 4,
-        y: c_top + height / 4,
-      },
-      {
-        x: c_right - width / 4,
-        y: c_top + height / 4,
-      },
-      {
-        x: c_right - width / 4,
-        y: c_bottom - height / 4,
-      },
-      {
-        x: c_left + width / 4,
-        y: c_bottom - height / 4,
-      },
-    ];
-    _.each(pointList, p => {
-      if (p.x > left && p.x < right && p.y > top && p.y < bottom) {
-        isCatched = true;
-      }
-    });
+    const t_center = {
+      x: x + width / 2,
+      y: y + height / 2,
+    };
+    const c_center = {
+      x: c_x + c_width / 2,
+      y: c_y + c_height / 2,
+    };
+
+    const safeDistance =
+      ((_.min([width, height]) as number) + (_.min([c_width, c_height]) as number)) / 5;
+
+    const d = Math.sqrt(
+      Math.pow(c_center.x - t_center.x, 2) + Math.pow(c_center.y - t_center.y, 2),
+    );
+
+    console.log('🚀-fjf : safeDistance:', safeDistance, 'd:', d);
+
+    if (d < safeDistance) {
+      isCatched = true;
+    }
+
     return isCatched;
   }
 
