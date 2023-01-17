@@ -56,7 +56,7 @@ class Monster {
     };
     this.vx = 0;
     this.vy = 0;
-    this.speed = 1;
+    this.speed = Math.SQRT2;
     this.x = _.random(0, props.width);
     this.y = _.random(0, props.height);
     this.size = props.size;

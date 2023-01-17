@@ -4,8 +4,10 @@ import Player from './player/Player';
 import Monster from './monster/Monster';
 import createSimpleSprite from './utils/createSimpleSprite';
 import _ from 'lodash';
+import Food from './food/Food';
 const main = () => {
   let monsterCreator: string | number | NodeJS.Timer | undefined;
+  let foodCreator: string | number | NodeJS.Timer | undefined;
   let monsterList: Monster[] = [];
   const gameState = {
     playing: false,
@@ -26,6 +28,10 @@ const main = () => {
   const monstersGroup = new Container();
   monstersGroup.name = 'monsters';
   monstersGroup.visible = false;
+
+  const foodsGroup = new Container();
+  foodsGroup.name = 'foods';
+  foodsGroup.visible = false;
 
   const bulletsGroup = new Container();
   bulletsGroup.name = 'bullets';
@@ -65,9 +71,18 @@ const main = () => {
     });
   };
 
+  const createFood = () => {
+    return new Food({
+      target: person,
+      width,
+      height,
+    });
+  };
+
   const startGame = () => {
     operateGroup.visible = false;
     monstersGroup.visible = true;
+    foodsGroup.visible = true;
     gameState.playing = true;
     root && (root.style.cursor = 'none');
     app.ticker.add(person.move, person);
@@ -82,6 +97,14 @@ const main = () => {
       monsterList.push(monster);
       app.ticker.add(monster.move, monster);
     }, 3000);
+    if (foodCreator) {
+      clearInterval(foodCreator);
+    }
+    foodCreator = setInterval(() => {
+      const food = createFood();
+      foodsGroup.addChild(food.sprite);
+      // app.ticker.add(monster.move, monster);
+    }, 5000);
   };
 
   const endGame = () => {
@@ -156,6 +179,7 @@ const main = () => {
   app.stage.addChild(monstersGroup);
   app.stage.addChild(bulletsGroup);
   app.stage.addChild(operateGroup);
+  app.stage.addChild(foodsGroup);
 };
 window.addEventListener('load', () => main());
 export default main;
