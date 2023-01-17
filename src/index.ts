@@ -82,7 +82,10 @@ const main = () => {
 
   const endGame = () => {
     root && (root.style.cursor = 'pointer');
-    console.log('gameOver');
+    operateGroup.visible = true;
+    startBtn.visible = false;
+    overLabel.visible = true;
+    restartBtn.visible = true;
   };
 
   // 添加开始按钮
