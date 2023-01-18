@@ -13,6 +13,7 @@ const main = () => {
   const gameState = {
     playing: false,
     score: 0,
+    killed: 0,
   };
   // 搭建场景
   const root = document.getElementById('root');
@@ -46,8 +47,8 @@ const main = () => {
     const monster = _.find(monsterList, m => m.id === monsterId);
     if (monster) {
       app.ticker.remove(monster.move, monster);
-      // gameState.score += eatenFood.value;
-      // scoreText.text = `SCORE: ${gameState.score}`;
+      gameState.killed += 1;
+      killedText.text = `KILLED: ${gameState.killed}`;
       monster.sprite.removeFromParent();
       monster.sprite.destroy();
       monsterList = _.filter(monsterList, m => m.id !== monster.id);
@@ -100,9 +101,10 @@ const main = () => {
     foodsGroup.visible = true;
     gameState.playing = true;
     scoreText.visible = true;
+    killedText.visible = true;
     bulletsGroup.visible = true;
     scoreText.text = `SCORE: ${gameState.score}`;
-    // scoreText.visible = true;
+    killedText.text = `KILLED: ${gameState.killed}`;
     root && (root.style.cursor = 'none');
     app.ticker.add(person.move, person);
     const monster = createMonster();
@@ -156,6 +158,7 @@ const main = () => {
     person.sprite.y = height / 2;
     person.sprite.playAnimation(person.states.walkDown);
     gameState.score = 0;
+    gameState.killed = 0;
     gameState.playing = true;
     operateGroup.visible = false;
     root && (root.style.cursor = 'none');
@@ -224,6 +227,15 @@ const main = () => {
   });
   scoreText.visible = false;
   app.stage.addChild(scoreText);
+  const killedText = new Text('KILLED: 0', {
+    fontFamily: 'Arial',
+    fontSize: 48,
+    fill: 0xf1aa10,
+    align: 'center',
+  });
+  killedText.y = 60;
+  killedText.visible = false;
+  app.stage.addChild(killedText);
 
   // 添加各个分组
   app.stage.addChild(monstersGroup);
