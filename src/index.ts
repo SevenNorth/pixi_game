@@ -92,6 +92,7 @@ const main = () => {
       width,
       height,
       eatFood,
+      destoryFood,
     });
   };
 
@@ -173,6 +174,16 @@ const main = () => {
     });
     foodList = [];
     startGame();
+  };
+
+  const destoryFood = (foodId: string) => {
+    const food = _.find(foodList, f => f.id === foodId);
+    if (food) {
+      app.ticker.remove(food.update, food);
+      food.sprite.removeFromParent();
+      food.sprite.destroy();
+      foodList = _.filter(foodList, f => f.id !== food.id);
+    }
   };
 
   const eatFood = (foodId: string) => {

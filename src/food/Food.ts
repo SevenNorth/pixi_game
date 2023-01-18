@@ -7,6 +7,7 @@ interface PropsType {
   width: number;
   height: number;
   eatFood: (foodId: string) => void;
+  destoryFood: (foodId: string) => void;
 }
 
 const foodList = [
@@ -38,16 +39,22 @@ class Food {
   value: number;
   id: string;
   eatFood: (foodId: string) => void;
+  destoryFood: (foodId: string) => void;
+  createdAt: number;
+  during: number;
 
   constructor(props: PropsType) {
     this.target = props.target;
     this.eatFood = props.eatFood;
+    this.destoryFood = props.destoryFood;
     this.id = _.uniqueId('food-');
     const food = foodList[_.random(4)];
     this.sprite = Sprite.from(food.url);
     this.value = food.value;
     this.sprite.x = _.random(50, props.width - 50);
     this.sprite.y = _.random(50, props.height - 50);
+    this.createdAt = Date.now();
+    this.during = (10 - food.value) * 1000; // 分值越高存在时间越短
   }
 
   hitTestRectangle(targetBounds: Rectangle, compareBounds: Rectangle): boolean {
@@ -65,7 +72,7 @@ class Food {
     };
 
     const safeDistance =
-      ((_.min([width, height]) as number) + (_.min([c_width, c_height]) as number)) / 5;
+      ((_.min([width, height]) as number) + (_.min([c_width, c_height]) as number)) / 4;
 
     const d = Math.sqrt(
       Math.pow(c_center.x - t_center.x, 2) + Math.pow(c_center.y - t_center.y, 2),
@@ -80,6 +87,10 @@ class Food {
 
   update() {
     if (this.sprite && this.target) {
+      if (Date.now() - this.createdAt > this.during) {
+        this.destoryFood(this.id);
+        return;
+      }
       const targetBounds = this.target.sprite.getBounds();
       const compareBounds = this.sprite.getBounds();
       const isCatched = this.hitTestRectangle(targetBounds, compareBounds);
