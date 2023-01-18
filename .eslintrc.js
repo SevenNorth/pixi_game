@@ -13,8 +13,8 @@ module.exports = {
   },
   extends: ['eslint:recommended', 'plugin:@typescript-eslint/recommended'],
   rules: {
-    'semi': [2, 'always'], //语句强制分号结尾
-    indent: ['error', 2],
+    semi: [2, 'always'], //语句强制分号结尾
+    indent: ['error', 2, { SwitchCase: 1 }],
     quotes: ['error', 'single'],
     'linebreak-style': ['error', 'unix'],
     '@typescript-eslint/no-unused-vars': 0,

@@ -87,6 +87,7 @@ const main = () => {
     foodsGroup.visible = true;
     gameState.playing = true;
     scoreText.visible = true;
+    bulletsGroup.visible = true;
     scoreText.text = `SCORE: ${gameState.score}`;
     // scoreText.visible = true;
     root && (root.style.cursor = 'none');

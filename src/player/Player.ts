@@ -2,6 +2,8 @@ import { ISprite } from '@/types';
 import { Assets, Application } from 'pixi.js';
 import { keyboard } from '../utils/keyboard.js';
 import SpriteUtilities from '../utils/SpriteUtilities.js';
+import Bullet from '../bullet/Bullet';
+import _ from 'lodash';
 
 interface PropsType {
   app: Application;
@@ -95,7 +97,8 @@ class Player {
     const left = keyboard(37),
       up = keyboard(38),
       right = keyboard(39),
-      down = keyboard(40);
+      down = keyboard(40),
+      space = keyboard(32);
 
     //左箭头键 按下
     left.press = () => {
@@ -161,6 +164,21 @@ class Player {
         this.vy = 0;
         this.sprite.show(this.states.down);
       }
+    };
+    // Space
+    space.press = _.throttle(() => {
+      if (!this.gameState.playing) return;
+      const bullet = new Bullet({
+        app: this.app,
+        face: this.face,
+        positon: {
+          x: this.x,
+          y: this.y,
+        },
+      });
+    }, 500);
+    space.release = () => {
+      //
     };
   }
 
