@@ -1,4 +1,4 @@
-import { Application, Rectangle, Sprite } from 'pixi.js';
+import { Rectangle, Sprite } from 'pixi.js';
 import _ from 'lodash';
 import Player from '@/player/Player';
 
@@ -6,6 +6,7 @@ interface PropsType {
   target: Player;
   width: number;
   height: number;
+  eatFood: (foodId: string) => void;
 }
 
 const foodList = [
@@ -14,19 +15,19 @@ const foodList = [
     url: require('../assets/apple.png'),
   },
   {
-    value: 1,
+    value: 2,
     url: require('../assets/bananer.png'),
   },
   {
-    value: 1,
+    value: 3,
     url: require('../assets/bread.png'),
   },
   {
-    value: 1,
+    value: 4,
     url: require('../assets/chess.png'),
   },
   {
-    value: 1,
+    value: 5,
     url: require('../assets/strawberry.png'),
   },
 ];
@@ -35,9 +36,13 @@ class Food {
   sprite!: Sprite;
   target: Player;
   value: number;
+  id: string;
+  eatFood: (foodId: string) => void;
 
   constructor(props: PropsType) {
     this.target = props.target;
+    this.eatFood = props.eatFood;
+    this.id = _.uniqueId('food-');
     const food = foodList[_.random(4)];
     this.sprite = Sprite.from(food.url);
     this.value = food.value;
@@ -71,6 +76,17 @@ class Food {
     }
 
     return isCatched;
+  }
+
+  update() {
+    if (this.sprite && this.target) {
+      const targetBounds = this.target.sprite.getBounds();
+      const compareBounds = this.sprite.getBounds();
+      const isCatched = this.hitTestRectangle(targetBounds, compareBounds);
+      if (isCatched) {
+        this.eatFood(this.id);
+      }
+    }
   }
 }
 

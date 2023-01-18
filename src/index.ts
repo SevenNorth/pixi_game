@@ -1,5 +1,5 @@
 import './index.less';
-import { Application, Container, Prepare } from 'pixi.js';
+import { Application, Container, Ticker } from 'pixi.js';
 import Player from './player/Player';
 import Monster from './monster/Monster';
 import createSimpleSprite from './utils/createSimpleSprite';
@@ -9,6 +9,7 @@ const main = () => {
   let monsterCreator: string | number | NodeJS.Timer | undefined;
   let foodCreator: string | number | NodeJS.Timer | undefined;
   let monsterList: Monster[] = [];
+  let foodList: Food[] = [];
   const gameState = {
     playing: false,
     score: 0,
@@ -76,6 +77,7 @@ const main = () => {
       target: person,
       width,
       height,
+      eatFood,
     });
   };
 
@@ -103,7 +105,8 @@ const main = () => {
     foodCreator = setInterval(() => {
       const food = createFood();
       foodsGroup.addChild(food.sprite);
-      // app.ticker.add(monster.move, monster);
+      foodList.push(food);
+      app.ticker.add(food.update, food);
     }, 5000);
   };
 
@@ -115,8 +118,12 @@ const main = () => {
     restartBtn.visible = true;
     gameState.playing = false;
     clearInterval(monsterCreator);
+    clearInterval(foodCreator);
     _.each(monsterList, m => {
       app.ticker.remove(m.move, m);
+    });
+    _.each(foodList, f => {
+      app.ticker.remove(f.update, f);
     });
     person.speed = 0;
     person.vx = 0;
@@ -140,7 +147,23 @@ const main = () => {
       m.sprite.destroy();
     });
     monsterList = [];
+    _.each(foodList, f => {
+      f.sprite.removeFromParent();
+      f.sprite.destroy();
+    });
+    foodList = [];
     startGame();
+  };
+
+  const eatFood = (foodId: string) => {
+    const eatenFood = _.find(foodList, f => f.id === foodId);
+    if (eatenFood) {
+      app.ticker.remove(eatenFood.update, eatenFood);
+      gameState.score += eatenFood.value;
+      eatenFood.sprite.removeFromParent();
+      eatenFood.sprite.destroy();
+      foodList = _.filter(foodList, f => f.id !== eatenFood.id);
+    }
   };
 
   // 添加开始按钮
