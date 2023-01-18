@@ -1,5 +1,5 @@
 import './index.less';
-import { Application, Container, Ticker } from 'pixi.js';
+import { Application, Container, Ticker, Text } from 'pixi.js';
 import Player from './player/Player';
 import Monster from './monster/Monster';
 import createSimpleSprite from './utils/createSimpleSprite';
@@ -86,6 +86,9 @@ const main = () => {
     monstersGroup.visible = true;
     foodsGroup.visible = true;
     gameState.playing = true;
+    scoreText.visible = true;
+    scoreText.text = `SCORE: ${gameState.score}`;
+    // scoreText.visible = true;
     root && (root.style.cursor = 'none');
     app.ticker.add(person.move, person);
     const monster = createMonster();
@@ -160,6 +163,7 @@ const main = () => {
     if (eatenFood) {
       app.ticker.remove(eatenFood.update, eatenFood);
       gameState.score += eatenFood.value;
+      scoreText.text = `SCORE: ${gameState.score}`;
       eatenFood.sprite.removeFromParent();
       eatenFood.sprite.destroy();
       foodList = _.filter(foodList, f => f.id !== eatenFood.id);
@@ -196,6 +200,16 @@ const main = () => {
   restartBtn.visible = false;
   restartBtn.onclick = restartGame;
   operateGroup.addChild(restartBtn);
+
+  // 计分板
+  const scoreText = new Text('SCORE: 0', {
+    fontFamily: 'Arial',
+    fontSize: 48,
+    fill: 0xf1aa10,
+    align: 'center',
+  });
+  scoreText.visible = false;
+  app.stage.addChild(scoreText);
 
   // 添加各个分组
   app.stage.addChild(monstersGroup);

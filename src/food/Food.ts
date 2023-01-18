@@ -46,8 +46,8 @@ class Food {
     const food = foodList[_.random(4)];
     this.sprite = Sprite.from(food.url);
     this.value = food.value;
-    this.sprite.x = _.random(0, props.width);
-    this.sprite.y = _.random(0, props.width);
+    this.sprite.x = _.random(50, props.width - 50);
+    this.sprite.y = _.random(50, props.height - 50);
   }
 
   hitTestRectangle(targetBounds: Rectangle, compareBounds: Rectangle): boolean {
