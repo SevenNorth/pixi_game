@@ -92,7 +92,7 @@ module.exports = {
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, '../public/index.html'), // 模板取定义root节点的模板
       inject: true, // 自动注入静态资源
-      title: 'pixi-game',
+      title: '雷电法王皮卡丘',
     }),
   ],
   cache: {
