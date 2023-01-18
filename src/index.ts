@@ -42,6 +42,18 @@ const main = () => {
   operateGroup.name = 'operate';
   operateGroup.visible = true;
 
+  const beatMonster = (monsterId: string) => {
+    const monster = _.find(monsterList, m => m.id === monsterId);
+    if (monster) {
+      app.ticker.remove(monster.move, monster);
+      // gameState.score += eatenFood.value;
+      // scoreText.text = `SCORE: ${gameState.score}`;
+      monster.sprite.removeFromParent();
+      monster.sprite.destroy();
+      monsterList = _.filter(monsterList, m => m.id !== monster.id);
+    }
+  };
+
   const person = new Player({
     app,
     x: width / 2,
@@ -56,6 +68,7 @@ const main = () => {
       y: height - 48,
     },
     gameState,
+    beatMonster,
   });
 
   const createMonster = () => {

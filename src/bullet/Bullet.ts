@@ -10,6 +10,7 @@ interface PropsType {
     x: number;
     y: number;
   };
+  beatMonster: (monsterId: string) => void;
 }
 
 class Bullet {
@@ -27,6 +28,7 @@ class Bullet {
     fly: number[];
     flyDistance: number;
   };
+  beatMonster: (monsterId: string) => void;
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -72,6 +74,7 @@ class Bullet {
       flyDistance: 500,
     };
     this.speed = 5;
+    this.beatMonster = props.beatMonster;
     this.init();
   }
 
@@ -106,7 +109,7 @@ class Bullet {
     };
 
     const safeDistance =
-      ((_.min([width, height]) as number) + (_.min([c_width, c_height]) as number)) / 5;
+      ((_.min([width, height]) as number) + (_.min([c_width, c_height]) as number)) / 4;
 
     const d = Math.sqrt(
       Math.pow(c_center.x - t_center.x, 2) + Math.pow(c_center.y - t_center.y, 2),
@@ -130,21 +133,41 @@ class Bullet {
     return flyEnd;
   }
 
+  findBeatMonster(): string | undefined {
+    let monsterId = undefined;
+    const monsters = (this.app.stage.getChildByName('monsters').children || []) as ISprite[];
+    for (let index = 0; index < monsters.length; index++) {
+      const monster = monsters[index];
+      const targetBounds = monster.getBounds();
+      const compareBounds = this.sprite.getBounds();
+      const isCatched = this.hitTestRectangle(targetBounds, compareBounds);
+      if (isCatched) {
+        monsterId = monster.customId;
+        break;
+      }
+    }
+    return monsterId;
+  }
+
+  destoryBullet() {
+    this.app.ticker.remove(this.fly, this);
+    this.sprite.removeFromParent();
+    this.sprite.destroy();
+  }
+
   fly() {
     if (this.sprite) {
       const flyEnd = this.flyEnd();
       if (flyEnd) {
-        this.app.ticker.remove(this.fly, this);
-        this.sprite.removeFromParent();
-        this.sprite.destroy();
+        this.destoryBullet();
         return;
       }
-      // const targetBounds = this.target.sprite.getBounds();
-      // const compareBounds = this.sprite.getBounds();
-      // const isCatched = this.hitTestRectangle(targetBounds, compareBounds);
-      // if (isCatched) {
-      //   return;
-      // }
+      const beatMonsterId = this.findBeatMonster();
+      if (beatMonsterId) {
+        this.beatMonster(beatMonsterId);
+        this.destoryBullet();
+        return;
+      }
       this.x += this.dx * this.speed;
       this.y += this.dy * this.speed;
       this.sprite.x += this.dx * this.speed;

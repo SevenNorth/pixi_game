@@ -21,6 +21,7 @@ interface PropsType {
     playing: boolean;
     score: number;
   };
+  beatMonster: (monsterId: string) => void;
 }
 
 class Player {
@@ -54,6 +55,7 @@ class Player {
     playing: boolean;
     score: number;
   };
+  beatMonster: (monsterId: string) => void;
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -76,6 +78,7 @@ class Player {
     this.max = props.max;
     this.face = 'down';
     this.gameState = props.gameState;
+    this.beatMonster = props.beatMonster;
     this.init();
   }
 
@@ -175,6 +178,7 @@ class Player {
           x: this.x,
           y: this.y,
         },
+        beatMonster: this.beatMonster,
       });
     }, 500);
     space.release = () => {

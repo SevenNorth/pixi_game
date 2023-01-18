@@ -40,6 +40,7 @@ class Monster {
     walkUp: number[];
   };
   endGame: () => void;
+  id: string;
 
   constructor(props: PropsType) {
     this.app = props.app;
@@ -56,11 +57,12 @@ class Monster {
     };
     this.vx = 0;
     this.vy = 0;
-    this.speed = Math.SQRT2;
+    this.speed = Math.E;
     this.x = _.random(0, props.width);
     this.y = _.random(0, props.height);
     this.size = props.size;
     this.endGame = props.endGame;
+    this.id = _.uniqueId('monster-');
     this.init();
   }
 
@@ -74,6 +76,7 @@ class Monster {
     this.sprite.fps = 12;
     this.sprite.x = this.x;
     this.sprite.y = this.y;
+    this.sprite.customId = this.id;
     (this.app.stage.getChildByName('monsters') as Container)?.addChild(this.sprite);
     this.sprite.playAnimation(this.states.walkDown);
   }
