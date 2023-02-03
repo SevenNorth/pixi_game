@@ -98,6 +98,7 @@ const main = () => {
 
   const startGame = () => {
     operateGroup.visible = false;
+    restartBtn.visible = false;
     monstersGroup.visible = true;
     foodsGroup.visible = true;
     gameState.playing = true;
@@ -253,6 +254,25 @@ const main = () => {
   app.stage.addChild(bulletsGroup);
   app.stage.addChild(operateGroup);
   app.stage.addChild(foodsGroup);
+
+  window.addEventListener(
+    'keydown',
+    e => {
+      if (e.keyCode === 82 && restartBtn.visible && operateGroup.visible) {
+        restartGame();
+      }
+      if (e.keyCode === 83 && !startBtn.visible && !operateGroup.visible) {
+        if (gameState.playing) {
+          gameState.playing = false;
+          app.ticker.stop();
+        } else {
+          gameState.playing = true;
+          app.ticker.start();
+        }
+      }
+    },
+    false,
+  );
 };
 window.addEventListener('load', () => main());
 export default main;
