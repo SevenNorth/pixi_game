@@ -58,8 +58,9 @@ class Monster {
     this.vx = 0;
     this.vy = 0;
     this.speed = Math.E;
-    this.x = _.random(0, props.width);
-    this.y = _.random(0, props.height);
+    const position = this.getMonsterInitPosition(props.width, props.height);
+    this.x = position.x;
+    this.y = position.y;
     this.size = props.size;
     this.endGame = props.endGame;
     this.id = _.uniqueId('monster-');
@@ -79,6 +80,29 @@ class Monster {
     this.sprite.customId = this.id;
     (this.app.stage.getChildByName('monsters') as Container)?.addChild(this.sprite);
     this.sprite.playAnimation(this.states.walkDown);
+  }
+
+  getMonsterInitPosition(
+    width: number,
+    height: number,
+  ): {
+    x: number;
+    y: number;
+  } {
+    const safeDistance = 100;
+    const x =
+      Math.random() > 0.5
+        ? _.random(0, this.target.x - safeDistance)
+        : _.random(this.target.x + safeDistance, width);
+    const y =
+      Math.random() > 0.5
+        ? _.random(0, this.target.y - safeDistance)
+        : _.random(this.target.y + safeDistance, height);
+
+    return {
+      x,
+      y,
+    };
   }
 
   getDirection() {
