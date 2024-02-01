@@ -98,6 +98,7 @@ const main = () => {
 
   const startGame = () => {
     operateGroup.visible = false;
+    aboutTEXT.visible = false;
     restartBtn.visible = false;
     monstersGroup.visible = true;
     foodsGroup.visible = true;
@@ -249,6 +250,29 @@ const main = () => {
   killedText.visible = false;
   app.stage.addChild(killedText);
 
+  // 操作说明
+  const aboutTEXT = new Text(
+    `
+  Instructions:
+    S: Start/Stop
+    R: Restart
+    Space: Attack
+    Up: Move Up
+    Left: Move Left
+    Right: Move Right
+    Down: Move Down
+  `,
+    {
+      fontFamily: 'Arial',
+      fontSize: 24,
+      fill: 0xf1aa10,
+      align: 'left',
+    },
+  );
+  aboutTEXT.x = width / 2 - 96 - 30;
+  aboutTEXT.y = height / 2 + 30;
+  app.stage.addChild(aboutTEXT);
+
   // 添加各个分组
   app.stage.addChild(monstersGroup);
   app.stage.addChild(bulletsGroup);
@@ -268,6 +292,12 @@ const main = () => {
         } else {
           gameState.playing = true;
           app.ticker.start();
+        }
+      }
+      if (e.keyCode === 83 && startBtn.visible && operateGroup.visible) {
+        if (!gameState.playing) {
+          gameState.playing = true;
+          startGame();
         }
       }
     },
