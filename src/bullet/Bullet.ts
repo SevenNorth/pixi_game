@@ -2,6 +2,7 @@ import { Application, Assets, Container, Rectangle } from 'pixi.js';
 import _ from 'lodash';
 import SpriteUtilities from '../utils/SpriteUtilities.js';
 import { ISprite } from '@/types';
+import bullet from '../assets/bullet.png';
 
 interface PropsType {
   app: Application;
@@ -80,10 +81,10 @@ class Bullet {
 
   async init() {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const imgUrl = require('../assets/bullet.png');
-    await Assets.load(imgUrl);
+    // const imgUrl = require('../assets/bullet.png');
+    await Assets.load(bullet);
     const su = new SpriteUtilities();
-    const frames = su.filmstrip(imgUrl, 128, 32);
+    const frames = su.filmstrip(bullet, 128, 32);
     this.sprite = su.sprite(frames) as ISprite;
     this.sprite.fps = 12;
     this.sprite.x = this.x;
