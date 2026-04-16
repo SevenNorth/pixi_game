@@ -83,7 +83,7 @@ class Player {
   }
 
   async init() {
-    const imgUrl = 'http://sevennorth.lovinghlx.cn/game-source/pikaqiu.png';
+    const imgUrl = '/imgs/pikaqiu.png';
     await Assets.load(imgUrl);
     const su = new SpriteUtilities();
     const frames = su.filmstrip(imgUrl, this.size.width, this.size.height);
