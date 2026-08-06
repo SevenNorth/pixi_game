@@ -9,9 +9,80 @@ body {
 #root {
   width: 100%;
   height: 100%;
-  cursor: pointer;
+  position: relative;
+  overflow: hidden;
+  cursor: default;
 
   canvas {
     display: block;
   }
+}
+
+#game-ui {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.hud {
+  position: fixed;
+  z-index: 10;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  gap: 12px;
+  color: #fff3b0;
+  font: 700 20px/1.2 Arial, sans-serif;
+  text-shadow: 2px 2px 0 #1e3340;
+  pointer-events: none;
+}
+
+.game-menu {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  color: #fff3b0;
+  font: 700 18px/1.4 Arial, sans-serif;
+  text-align: center;
+  text-shadow: 2px 2px 0 #1e3340;
+  pointer-events: none;
+}
+
+.menu-actions {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  pointer-events: auto;
+}
+
+.image-button {
+  width: 199px;
+  height: 73px;
+  border: 0;
+  background: transparent center / contain no-repeat;
+  cursor: pointer;
+}
+
+.restart-button {
+  width: 60px;
+  height: 60px;
+}
+
+.image-button:hover,
+.image-button:focus-visible {
+  filter: brightness(1.15) drop-shadow(0 0 8px rgba(255, 243, 176, 0.8));
+  outline: none;
+}
+
+.menu-message {
+  max-width: min(90vw, 520px);
+}
+
+[hidden] {
+  display: none !important;
 }

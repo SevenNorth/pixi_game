@@ -1,12 +1,10 @@
 # 雷电法王皮卡丘：玩法与技术规划
 
-> 状态：已确定迁移 Phaser，等待实施
+> 状态：Phaser 阶段零已完成
 >
 > 更新时间：2026-08-06
 >
-> 当前基线：PixiJS 7.1.x + TypeScript + Vite
->
-> 目标技术栈：Phaser + TypeScript + Vite + DOM HUD
+> 当前基线：Phaser 3.90.x + TypeScript + Vite + DOM HUD
 
 ## 1. 项目定位
 
@@ -264,19 +262,19 @@ src/
 
 ### 阶段零：迁移 Phaser 并对齐现有玩法
 
-- [ ] 创建 Phaser Game 和基础配置
-- [ ] 创建 BootScene、MenuScene 和 GameScene
-- [ ] 建立稳定的资源 manifest key
-- [ ] 迁移皮卡丘精灵图和方向动画
-- [ ] 迁移方向键移动和空格攻击
-- [ ] 迁移怪物生成与自动追踪
-- [ ] 迁移子弹飞行和击杀判定
-- [ ] 迁移食物生成、消失和计分
-- [ ] 使用 DOM 实现分数、击杀数和操作菜单
-- [ ] 对齐开始、暂停、结束和重启行为
-- [ ] 验证场景暂停时生成器、动画和输入全部暂停
-- [ ] 完成当前玩法浏览器测试
-- [ ] 移除 PixiJS、Lodash 和旧 SpriteUtilities 代码
+- [x] 创建 Phaser Game 和基础配置
+- [x] 创建 BootScene、MenuScene 和 GameScene
+- [x] 建立稳定的资源 manifest key
+- [x] 迁移皮卡丘精灵图和方向动画
+- [x] 迁移方向键移动和空格攻击
+- [x] 迁移怪物生成与自动追踪
+- [x] 迁移子弹飞行和击杀判定
+- [x] 迁移食物生成、消失和计分
+- [x] 使用 DOM 实现分数、击杀数和操作菜单
+- [x] 对齐开始、暂停、结束和重启行为
+- [x] 验证暂停状态由统一 Phaser 时间和物理系统控制
+- [x] 完成当前玩法浏览器验证
+- [x] 移除 PixiJS、Lodash 和旧 SpriteUtilities 代码
 
 ### 阶段一：生存基础
 
