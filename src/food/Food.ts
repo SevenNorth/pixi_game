@@ -1,6 +1,11 @@
 import { Rectangle, Sprite } from 'pixi.js';
 import _ from 'lodash';
 import Player from '@/player/Player';
+import appleImage from '../assets/apple.png';
+import bananerImage from '../assets/bananer.png';
+import breadImage from '../assets/bread.png';
+import chessImage from '../assets/chess.png';
+import strawberryImage from '../assets/strawberry.png';
 
 interface PropsType {
   target: Player;
@@ -13,23 +18,23 @@ interface PropsType {
 const foodList = [
   {
     value: 1,
-    url: require('../assets/apple.png'),
+    url: appleImage,
   },
   {
     value: 2,
-    url: require('../assets/bananer.png'),
+    url: bananerImage,
   },
   {
     value: 3,
-    url: require('../assets/bread.png'),
+    url: breadImage,
   },
   {
     value: 4,
-    url: require('../assets/chess.png'),
+    url: chessImage,
   },
   {
     value: 5,
-    url: require('../assets/strawberry.png'),
+    url: strawberryImage,
   },
 ];
 

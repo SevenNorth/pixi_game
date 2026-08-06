@@ -80,8 +80,6 @@ class Bullet {
   }
 
   async init() {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    // const imgUrl = require('../assets/bullet.png');
     await Assets.load(bullet);
     const su = new SpriteUtilities();
     const frames = su.filmstrip(bullet, 128, 32);

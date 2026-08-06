@@ -5,6 +5,9 @@ import Monster from './monster/Monster';
 import createSimpleSprite from './utils/createSimpleSprite';
 import _ from 'lodash';
 import Food from './food/Food';
+import startImage from './assets/start.png';
+import gameoverImage from './assets/gameover.png';
+import restartImage from './assets/restart.png';
 const main = () => {
   let monsterCreator: string | number | NodeJS.Timer | undefined;
   let foodCreator: string | number | NodeJS.Timer | undefined;
@@ -202,7 +205,7 @@ const main = () => {
 
   // 添加开始按钮
   const startBtn = createSimpleSprite({
-    url: require('./assets/start.png'),
+    url: startImage,
     name: 'startBtn',
   });
   startBtn.x = width / 2 - 96 - 30;
@@ -212,7 +215,7 @@ const main = () => {
   operateGroup.addChild(startBtn);
   // 添加游戏结束Label
   const overLabel = createSimpleSprite({
-    url: require('./assets/gameover.png'),
+    url: gameoverImage,
     name: 'gameOver',
   });
   overLabel.x = width / 2 - 175;
@@ -222,7 +225,7 @@ const main = () => {
   operateGroup.addChild(overLabel);
   // restart
   const restartBtn = createSimpleSprite({
-    url: require('./assets/restart.png'),
+    url: restartImage,
     name: 'restartbtn',
   });
   restartBtn.x = width / 2 + 100;

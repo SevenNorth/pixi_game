@@ -3,6 +3,7 @@ import _ from 'lodash';
 import Player from '@/player/Player';
 import SpriteUtilities from '../utils/SpriteUtilities.js';
 import { ISprite } from '@/types';
+import ghostImage from '../assets/ghost.png';
 
 interface PropsType {
   app: Application;
@@ -69,7 +70,7 @@ class Monster {
 
   async init() {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const imgUrl = require('../assets/ghost.png');
+    const imgUrl = ghostImage;
     await Assets.load(imgUrl);
     const su = new SpriteUtilities();
     const frames = su.filmstrip(imgUrl, this.size.width, this.size.height);
