@@ -12,6 +12,12 @@ import {
   updateMonsterAggro,
 } from '../../game/simulation/MonsterCombat';
 import type { MonsterCombatState } from '../../game/simulation/MonsterCombat';
+import {
+  createPlayerDirectionState,
+  resolveCardinalDirection,
+  updatePlayerDirection,
+} from '../../game/simulation/PlayerMovement';
+import type { CardinalDirection, PlayerDirectionState } from '../../game/simulation/PlayerMovement';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
 import { PlayerVitals } from '../../game/simulation/PlayerVitals';
@@ -30,14 +36,15 @@ import {
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
 
-type Direction = 'up' | 'right' | 'down' | 'left';
-
 const BULLET_LENGTH = 64;
+const BULLET_THICKNESS = 20;
+const BULLET_SPEED = 420;
 
 interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   monsterId: string;
   combat: MonsterCombatState;
   healthBar: Phaser.GameObjects.Graphics;
+  animationDirection: CardinalDirection;
 }
 
 interface FoodSprite extends Phaser.Physics.Arcade.Image {
@@ -46,7 +53,7 @@ interface FoodSprite extends Phaser.Physics.Arcade.Image {
   expiresAt: number;
 }
 
-interface BulletSprite extends Phaser.GameObjects.Container {
+interface BulletSprite extends Phaser.GameObjects.Zone {
   lightning: Phaser.GameObjects.Graphics;
   damage: number;
   directionX: number;
@@ -54,6 +61,7 @@ interface BulletSprite extends Phaser.GameObjects.Container {
   remainingDistance: number;
   flickerElapsed: number;
   collisionEnabledAt: number;
+  launched: boolean;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -75,6 +83,7 @@ export class GameScene extends Phaser.Scene {
   private lastShotAt = -Infinity;
   private gameplayTime = 0;
   private playerAttack = 1;
+  private playerDirection: PlayerDirectionState = createPlayerDirectionState();
   private vitals = new PlayerVitals();
   private progression = new PlayerProgression();
   private damageTween?: Phaser.Tweens.Tween;
@@ -89,6 +98,7 @@ export class GameScene extends Phaser.Scene {
     this.killed = 0;
     this.gameplayTime = 0;
     this.lastShotAt = -Infinity;
+    this.playerDirection = createPlayerDirectionState();
     this.vitals.reset();
     this.progression.reset();
     this.playerAttack = attackForLevel(this.progression.state.level);
@@ -116,12 +126,13 @@ export class GameScene extends Phaser.Scene {
       Phaser.Input.Keyboard.Key
     >;
     this.space = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.space.on('down', this.handleShoot, this);
     this.input.keyboard!.on('keydown-P', this.togglePause, this);
     this.input.keyboard!.on('keydown-R', this.restart, this);
+    this.events.on(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
 
     this.player = this.physics.add.sprite(0, 0, 'player', 0);
+    this.player.setDepth(2);
     this.player.setCollideWorldBounds(true);
     this.player.setSize(34, 40).setOffset(7, 6);
     this.player.play('player-down');
@@ -144,7 +155,7 @@ export class GameScene extends Phaser.Scene {
   shutdown() {
     this.input.keyboard?.off('keydown-P', this.togglePause, this);
     this.input.keyboard?.off('keydown-R', this.restart, this);
-    this.space?.off('down', this.handleShoot, this);
+    this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     window.removeEventListener('restart-game', this.restart);
   }
 
@@ -153,47 +164,47 @@ export class GameScene extends Phaser.Scene {
     this.gameplayTime += Math.min(delta, 50);
     const speed = 180;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    body.setVelocity(0, 0);
-    let direction: Direction | undefined;
-    if (this.cursors.left.isDown || this.wasd.A.isDown) direction = 'left';
-    else if (this.cursors.right.isDown || this.wasd.D.isDown) direction = 'right';
-    else if (this.cursors.up.isDown || this.wasd.W.isDown) direction = 'up';
-    else if (this.cursors.down.isDown || this.wasd.S.isDown) direction = 'down';
-    if (direction) {
-      this.player.play(`player-${direction}`, true);
-      if (direction === 'left') body.setVelocityX(-speed);
-      if (direction === 'right') body.setVelocityX(speed);
-      if (direction === 'up') body.setVelocityY(-speed);
-      if (direction === 'down') body.setVelocityY(speed);
-      this.player.setData('face', direction);
+    const horizontal = Number(this.cursors.right.isDown || this.wasd.D.isDown)
+      - Number(this.cursors.left.isDown || this.wasd.A.isDown);
+    const vertical = Number(this.cursors.down.isDown || this.wasd.S.isDown)
+      - Number(this.cursors.up.isDown || this.wasd.W.isDown);
+    updatePlayerDirection(this.playerDirection, horizontal, vertical);
+    body.setVelocity(
+      this.playerDirection.movementVector.x * speed,
+      this.playerDirection.movementVector.y * speed,
+    );
+    if (horizontal !== 0 || vertical !== 0) {
+      this.playDirectionalAnimation(this.player, 'player', this.playerDirection.animationDirection);
+    } else if (this.player.anims.isPlaying && !this.player.anims.isPaused) {
+      this.player.anims.pause();
     }
+    if (this.space.isDown) this.handleShoot();
     this.monsters.children.each(child => {
       const monster = child as MonsterSprite;
       if (monster.getData('defeated')) return null;
-      const angle = Phaser.Math.Angle.Between(monster.x, monster.y, this.player.x, this.player.y);
       const monsterBody = monster.body as Phaser.Physics.Arcade.Body;
-      const distance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
-      const aggro = updateMonsterAggro(monster.combat, distance);
-      if (aggro === 'chasing') {
-        const homeDistance = Phaser.Math.Distance.Between(
-          monster.x,
-          monster.y,
-          monster.combat.homeX,
-          monster.combat.homeY,
-        );
-        if (homeDistance >= MONSTER_MAX_CHASE_DISTANCE) {
-          monster.combat.aggro = 'idle';
-          setMonsterPatrolTarget(monster.combat, monster.combat.homeX, monster.combat.homeY, 0);
-          this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
-        } else {
-          this.moveMonsterToward(monster, this.player.x, this.player.y, monster.combat.speed);
-        }
-      } else if (Phaser.Math.Distance.Between(
+      const playerDistance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+      const homeDistance = Phaser.Math.Distance.Between(
         monster.x,
         monster.y,
         monster.combat.homeX,
         monster.combat.homeY,
-      ) > MONSTER_PATROL_RADIUS * 1.25) {
+      );
+      const aggro = updateMonsterAggro(monster.combat, playerDistance, homeDistance);
+      if (aggro === 'chasing') {
+        this.moveMonsterToward(monster, this.player.x, this.player.y, monster.combat.speed);
+      } else if (aggro === 'returning') {
+        if (homeDistance <= MONSTER_PATROL_REACH_DISTANCE) {
+          monster.combat.aggro = 'idle';
+          pauseMonsterPatrol(
+            monster.combat,
+            this.gameplayTime + Phaser.Math.FloatBetween(250, 500),
+          );
+          monsterBody.setVelocity(0, 0);
+        } else {
+          this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
+        }
+      } else if (homeDistance > MONSTER_PATROL_RADIUS * 1.25) {
         setMonsterPatrolTarget(monster.combat, monster.combat.homeX, monster.combat.homeY, 0);
         this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
       } else if (this.gameplayTime < monster.combat.patrolPauseUntil) {
@@ -218,7 +229,7 @@ export class GameScene extends Phaser.Scene {
         if (patrolDistance <= MONSTER_PATROL_REACH_DISTANCE) {
           pauseMonsterPatrol(
             monster.combat,
-            this.gameplayTime + Phaser.Math.FloatBetween(700, 1600),
+            this.gameplayTime + Phaser.Math.FloatBetween(300, 700),
           );
           monsterBody.setVelocity(0, 0);
         } else {
@@ -231,11 +242,13 @@ export class GameScene extends Phaser.Scene {
         }
       }
       if (monsterBody.velocity.lengthSq() > 0) {
-        const face = Math.abs(monsterBody.velocity.x) > Math.abs(monsterBody.velocity.y)
-          ? (monsterBody.velocity.x < 0 ? 'left' : 'right')
-          : (monsterBody.velocity.y < 0 ? 'up' : 'down');
-        monster.play(`monster-${face}`, true);
-      } else {
+        monster.animationDirection = resolveCardinalDirection(
+          monsterBody.velocity.x,
+          monsterBody.velocity.y,
+          monster.animationDirection,
+        );
+        this.playDirectionalAnimation(monster, 'monster', monster.animationDirection);
+      } else if (monster.anims.isPlaying && !monster.anims.isPaused) {
         monster.anims.pause();
       }
       this.updateMonsterHealthBar(monster);
@@ -244,18 +257,17 @@ export class GameScene extends Phaser.Scene {
 
     this.bullets.children.each(child => {
       const bullet = child as BulletSprite;
-      if (this.gameplayTime >= bullet.collisionEnabledAt) {
-        const distance = Math.min(delta, 50) * 0.42;
-        bullet.x += bullet.directionX * distance;
-        bullet.y += bullet.directionY * distance;
-        bullet.remainingDistance -= distance;
+      const body = bullet.body as Phaser.Physics.Arcade.Body;
+      if (!bullet.launched && this.gameplayTime >= bullet.collisionEnabledAt) {
+        body.setVelocity(bullet.directionX * BULLET_SPEED, bullet.directionY * BULLET_SPEED);
+        bullet.launched = true;
       }
+      if (bullet.launched) bullet.remainingDistance -= Math.min(delta, 50) * (BULLET_SPEED / 1000);
       bullet.flickerElapsed += delta;
       if (bullet.flickerElapsed >= 70) {
         bullet.flickerElapsed = 0;
-        this.drawLightning(bullet.lightning);
+        this.drawLightning(bullet.lightning, bullet.directionX, bullet.directionY);
       }
-      (bullet.body as Phaser.Physics.Arcade.Body).updateFromGameObject();
       if (bullet.remainingDistance <= 0) bullet.destroy();
       return null;
     });
@@ -270,56 +282,78 @@ export class GameScene extends Phaser.Scene {
     if (
       this.ended ||
       this.paused ||
-      this.time.now - this.lastShotAt < 500
+      this.gameplayTime - this.lastShotAt < 500
     ) return;
-    this.lastShotAt = this.time.now;
+    this.lastShotAt = this.gameplayTime;
     this.shoot();
   }
 
   private shoot() {
-    const face = (this.player.getData('face') as Direction | undefined) ?? 'down';
-    const direction = {
-      up: { x: 0, y: -1, angle: -Math.PI / 2 },
-      right: { x: 1, y: 0, angle: 0 },
-      down: { x: 0, y: 1, angle: Math.PI / 2 },
-      left: { x: -1, y: 0, angle: Math.PI },
-    }[face];
+    const direction = this.playerDirection.facingVector;
+    const bodyWidth = Math.abs(direction.x) * BULLET_LENGTH + BULLET_THICKNESS;
+    const bodyHeight = Math.abs(direction.y) * BULLET_LENGTH + BULLET_THICKNESS;
     const lightning = this.add.graphics();
-    const bullet = this.add.container(
-      this.player.x + direction.x * 24,
-      this.player.y + direction.y * 24,
-      lightning,
+    const bullet = this.add.zone(
+      this.player.x + direction.x * (24 + BULLET_LENGTH / 2),
+      this.player.y + direction.y * (24 + BULLET_LENGTH / 2),
+      bodyWidth,
+      bodyHeight,
     ) as BulletSprite;
     this.physics.add.existing(bullet);
     this.bullets.add(bullet);
     bullet.lightning = lightning;
+    lightning.setPosition(bullet.x, bullet.y).setDepth(1);
+    bullet.once(Phaser.GameObjects.Events.DESTROY, () => lightning.destroy());
     bullet.damage = this.playerAttack;
     bullet.directionX = direction.x;
     bullet.directionY = direction.y;
     bullet.remainingDistance = 500;
     bullet.flickerElapsed = 0;
     bullet.collisionEnabledAt = this.gameplayTime + 50;
+    bullet.launched = false;
     bullet.setData('bulletId', this.bulletId++);
-    bullet.setDepth(2);
     const body = bullet.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(false);
-    body.setSize(direction.x === 0 ? 20 : BULLET_LENGTH, direction.y === 0 ? 20 : BULLET_LENGTH);
-    body.setOffset(
-      direction.x === 0 ? -10 : -BULLET_LENGTH / 2,
-      direction.y === 0 ? -10 : -BULLET_LENGTH / 2,
-    );
-    this.drawLightning(lightning);
-    bullet.setAngle(Phaser.Math.RadToDeg(direction.angle));
+    body.setSize(bodyWidth, bodyHeight);
+    body.setOffset(0, 0);
+    this.drawLightning(lightning, direction.x, direction.y);
     body.setVelocity(0, 0);
   }
 
-  private drawLightning(graphics: Phaser.GameObjects.Graphics) {
-    const points: Phaser.Math.Vector2[] = [new Phaser.Math.Vector2(0, 0)];
+  private syncBulletVisuals() {
+    this.bullets.children.each(child => {
+      const bullet = child as BulletSprite;
+      bullet.lightning.setPosition(bullet.x, bullet.y);
+      return null;
+    });
+  }
+
+  private drawLightning(
+    graphics: Phaser.GameObjects.Graphics,
+    directionX: number,
+    directionY: number,
+  ) {
+    const perpendicularX = -directionY;
+    const perpendicularY = directionX;
+    const points: Phaser.Math.Vector2[] = [
+      new Phaser.Math.Vector2(
+        -directionX * BULLET_LENGTH / 2,
+        -directionY * BULLET_LENGTH / 2,
+      ),
+    ];
     const segments = 6;
     for (let index = 1; index < segments; index += 1) {
-      points.push(new Phaser.Math.Vector2((BULLET_LENGTH / segments) * index, Phaser.Math.Between(-7, 7)));
+      const distance = -BULLET_LENGTH / 2 + (BULLET_LENGTH / segments) * index;
+      const jitter = Phaser.Math.Between(-7, 7);
+      points.push(new Phaser.Math.Vector2(
+        directionX * distance + perpendicularX * jitter,
+        directionY * distance + perpendicularY * jitter,
+      ));
     }
-    points.push(new Phaser.Math.Vector2(BULLET_LENGTH, 0));
+    points.push(new Phaser.Math.Vector2(
+      directionX * BULLET_LENGTH / 2,
+      directionY * BULLET_LENGTH / 2,
+    ));
     graphics.clear();
     this.strokeLightning(graphics, points, 7, 0x1677ff, 0.42);
     this.strokeLightning(graphics, points, 4, 0x4ebcff, 0.9);
@@ -348,6 +382,7 @@ export class GameScene extends Phaser.Scene {
     const monster = this.physics.add.sprite(point.x, point.y, 'monster', 0) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
     monster.combat = createMonsterCombatState(1, point.x, point.y);
+    monster.animationDirection = 'down';
     monster.healthBar = this.add.graphics().setDepth(4);
     monster.healthBar.setVisible(false);
     monster.setData('monsterId', monster.monsterId);
@@ -376,6 +411,17 @@ export class GameScene extends Phaser.Scene {
     const angle = Phaser.Math.Angle.Between(monster.x, monster.y, targetX, targetY);
     const body = monster.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+  }
+
+  private playDirectionalAnimation(
+    sprite: Phaser.Physics.Arcade.Sprite,
+    prefix: 'player' | 'monster',
+    direction: CardinalDirection,
+  ) {
+    const key = `${prefix}-${direction}`;
+    if (sprite.anims.currentAnim?.key !== key || sprite.anims.isPaused) {
+      sprite.play(key, true);
+    }
   }
 
   private onBulletHit: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (bulletObject, monsterObject) => {

@@ -1,4 +1,4 @@
-export type MonsterAggroState = 'idle' | 'chasing';
+export type MonsterAggroState = 'idle' | 'chasing' | 'returning';
 
 export interface MonsterCombatState {
   level: number;
@@ -75,11 +75,20 @@ export function applyMonsterDamage(state: MonsterCombatState, amount: number): M
   };
 }
 
-export function updateMonsterAggro(state: MonsterCombatState, distance: number) {
-  if (state.aggro === 'idle' && distance <= MONSTER_AGGRO_ENTER_DISTANCE) {
+export function updateMonsterAggro(
+  state: MonsterCombatState,
+  playerDistance: number,
+  homeDistance: number,
+) {
+  if (state.aggro === 'returning') return state.aggro;
+
+  if (state.aggro === 'idle' && playerDistance <= MONSTER_AGGRO_ENTER_DISTANCE) {
     state.aggro = 'chasing';
-  } else if (state.aggro === 'chasing' && distance >= MONSTER_AGGRO_EXIT_DISTANCE) {
-    state.aggro = 'idle';
+  } else if (
+    state.aggro === 'chasing' &&
+    (playerDistance >= MONSTER_AGGRO_EXIT_DISTANCE || homeDistance >= MONSTER_MAX_CHASE_DISTANCE)
+  ) {
+    state.aggro = 'returning';
   }
   return state.aggro;
 }
