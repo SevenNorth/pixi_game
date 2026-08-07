@@ -14,7 +14,7 @@ import type { WorldChunkState, WorldObstacleState } from '../../game/simulation/
 import { MapProgression } from '../../game/simulation/MapProgression';
 import { rollMonsterLevel } from '../../game/simulation/MonsterLevelScaling';
 import {
-  canSpawnMinion,
+  MonsterSpawnDirector,
   rollMinionKind,
 } from '../../game/simulation/MonsterSpawnDirector';
 import {
@@ -82,6 +82,11 @@ import {
 import type { ProjectileView, ProjectileVisualStyle } from '../view/projectiles/ProjectileView';
 import { getRandomBossVisual, getRandomEnemyVisual } from '../view/enemies/enemyVisualDefinitions';
 import type { EnemyVisualDefinition } from '../view/enemies/enemyVisualDefinitions';
+import {
+  createBossOffscreenIndicator,
+  updateBossOffscreenIndicator,
+} from '../view/ui/BossOffscreenIndicator';
+import type { BossOffscreenIndicator } from '../view/ui/BossOffscreenIndicator';
 import { ensureObstacleTexture } from '../view/world/createObstacleTexture';
 
 const BULLET_SPEED = 420;
@@ -139,6 +144,8 @@ export class GameScene extends Phaser.Scene {
   private appliedPassiveMaxShieldBonus = 0;
   private damageTween?: Phaser.Tweens.Tween;
   private preserveMapProgressionOnRestart = false;
+  private bossIndicator!: BossOffscreenIndicator;
+  private spawnDirector = new MonsterSpawnDirector();
 
   constructor() {
     super('GameScene');
@@ -159,6 +166,7 @@ export class GameScene extends Phaser.Scene {
     this.playerPassives.reset();
     this.world.reset();
     if (!preserveMapProgression) this.mapProgression.reset();
+    this.spawnDirector.reset(this.mapProgression.state.level);
     this.obstacleSprites.clear();
     this.appliedPassiveMaxShieldBonus = 0;
     this.playerAttack = attackForLevel(this.progression.state.level);
@@ -210,6 +218,7 @@ export class GameScene extends Phaser.Scene {
       WORLD_RUNTIME_HALF_EXTENT * 2,
     );
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
+    this.bossIndicator = createBossOffscreenIndicator(this);
 
     this.physics.add.overlap(this.projectiles, this.monsters, this.onProjectileHitMonster, undefined, this);
     this.physics.add.overlap(this.projectiles, this.player, this.onProjectileHitPlayer, undefined, this);
@@ -381,6 +390,11 @@ export class GameScene extends Phaser.Scene {
       if (this.time.now > food.expiresAt) food.destroy();
       return null;
     });
+    updateBossOffscreenIndicator(
+      this.bossIndicator,
+      this.cameras.main,
+      this.getActiveBoss(),
+    );
   }
 
   private handleShoot() {
@@ -548,16 +562,26 @@ export class GameScene extends Phaser.Scene {
   private spawnMonster() {
     if (this.ended) return;
     this.recycleDistantMinions();
+    this.spawnDirector.syncMapLevel(this.mapProgression.state.level);
+    const activeMinions = this.countActiveMinions();
+    if (this.mapProgression.state.status === 'boss-active') return;
+    if (
+      this.mapProgression.state.status === 'boss-ready' &&
+      activeMinions > 0
+    ) return;
     const kind = this.getNextEnemyKind();
     if (
       kind !== 'boss' &&
-      !canSpawnMinion(this.mapProgression.state.level, this.countActiveMinions())
+      !this.spawnDirector.canSpawnMinion(activeMinions)
     ) return;
     const point = this.getSpawnPoint(450);
     if (kind === 'boss') {
       if (!this.mapProgression.markBossSpawned()) return;
       this.updateMapProgressionHud();
     }
+    const monsterLevel = kind === 'boss'
+      ? this.mapProgression.state.level
+      : rollMonsterLevel(this.mapProgression.state.level, Phaser.Math.RND.frac());
     const definition = getEnemyDefinition(kind);
     const visualDefinition = kind === 'boss' ? undefined : getRandomEnemyVisual();
     const bossVisual = kind === 'boss' ? getRandomBossVisual() : undefined;
@@ -568,9 +592,6 @@ export class GameScene extends Phaser.Scene {
       0,
     ) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
-    const monsterLevel = kind === 'boss'
-      ? this.mapProgression.state.level
-      : rollMonsterLevel(this.mapProgression.state.level, Phaser.Math.RND.frac());
     monster.combat = createMonsterCombatState(
       monsterLevel,
       point.x,
@@ -605,7 +626,11 @@ export class GameScene extends Phaser.Scene {
       monster.setData('bossVisual', bossVisual!.id);
     }
     this.monsters.add(monster);
-    if (kind === 'boss') showBossAppeared(monsterLevel);
+    if (kind === 'boss') {
+      showBossAppeared(monsterLevel);
+    } else {
+      this.spawnDirector.recordMinionSpawn();
+    }
   }
 
   private getNextEnemyKind(): EnemyKind {
@@ -646,14 +671,18 @@ export class GameScene extends Phaser.Scene {
   }
 
   private hasActiveBoss() {
-    return this.monsters.children.entries.some(child => {
+    return this.getActiveBoss() !== undefined;
+  }
+
+  private getActiveBoss() {
+    return this.monsters.children.entries.find(child => {
       const monster = child as MonsterSprite;
       return (
         monster.active &&
         monster.combat.kind === 'boss' &&
         !monster.getData('defeated')
       );
-    });
+    }) as MonsterSprite | undefined;
   }
 
   private spawnFood() {
@@ -1096,6 +1125,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.pause();
     this.monsterTimer?.remove(false);
     this.foodTimer?.remove(false);
+    this.bossIndicator.container.setVisible(false);
     this.preserveMapProgressionOnRestart = this.mapProgression.failBoss();
     if (this.preserveMapProgressionOnRestart) this.updateMapProgressionHud();
     showMenu(t('gameOver', { killed: this.killed }), false, true);

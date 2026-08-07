@@ -2,13 +2,22 @@ export type SpawnableMinionKind = 'normal' | 'elite';
 
 export interface MonsterSpawnProfile {
   maxActiveMinions: number;
+  maxTotalMinionSpawns: number;
   normalWeight: number;
   eliteWeight: number;
 }
 
-const BASE_ACTIVE_MINIONS = 6;
+export interface MonsterSpawnDirectorState {
+  mapLevel: number;
+  spawnedMinions: number;
+}
+
+const STARTING_ACTIVE_MINIONS = 10;
 const ACTIVE_MINIONS_PER_MAP_LEVEL = 2;
 const MAX_ACTIVE_MINIONS = 30;
+const STARTING_TOTAL_MINION_SPAWNS = 30;
+const TOTAL_MINION_SPAWNS_PER_MAP_LEVEL = 10;
+const MAX_TOTAL_MINION_SPAWNS = 120;
 const STARTING_ELITE_WEIGHT = 0.1;
 const ELITE_WEIGHT_PER_MAP_LEVEL = 0.05;
 const MAX_ELITE_WEIGHT = 0.4;
@@ -17,7 +26,13 @@ export function getMonsterSpawnProfile(mapLevel: number): MonsterSpawnProfile {
   const normalizedMapLevel = Math.max(1, Math.floor(mapLevel));
   const maxActiveMinions = Math.min(
     MAX_ACTIVE_MINIONS,
-    BASE_ACTIVE_MINIONS + normalizedMapLevel * ACTIVE_MINIONS_PER_MAP_LEVEL,
+    STARTING_ACTIVE_MINIONS
+      + (normalizedMapLevel - 1) * ACTIVE_MINIONS_PER_MAP_LEVEL,
+  );
+  const maxTotalMinionSpawns = Math.min(
+    MAX_TOTAL_MINION_SPAWNS,
+    STARTING_TOTAL_MINION_SPAWNS
+      + (normalizedMapLevel - 1) * TOTAL_MINION_SPAWNS_PER_MAP_LEVEL,
   );
   const eliteWeight = normalizedMapLevel < 2
     ? 0
@@ -27,13 +42,39 @@ export function getMonsterSpawnProfile(mapLevel: number): MonsterSpawnProfile {
     );
   return {
     maxActiveMinions,
+    maxTotalMinionSpawns,
     normalWeight: 1 - eliteWeight,
     eliteWeight,
   };
 }
 
-export function canSpawnMinion(mapLevel: number, activeMinions: number) {
-  return activeMinions < getMonsterSpawnProfile(mapLevel).maxActiveMinions;
+export class MonsterSpawnDirector {
+  readonly state: MonsterSpawnDirectorState = {
+    mapLevel: 1,
+    spawnedMinions: 0,
+  };
+
+  reset(mapLevel = 1) {
+    this.state.mapLevel = Math.max(1, Math.floor(mapLevel));
+    this.state.spawnedMinions = 0;
+  }
+
+  syncMapLevel(mapLevel: number) {
+    const normalizedMapLevel = Math.max(1, Math.floor(mapLevel));
+    if (normalizedMapLevel !== this.state.mapLevel) this.reset(normalizedMapLevel);
+  }
+
+  canSpawnMinion(activeMinions: number) {
+    const profile = getMonsterSpawnProfile(this.state.mapLevel);
+    return (
+      activeMinions < profile.maxActiveMinions &&
+      this.state.spawnedMinions < profile.maxTotalMinionSpawns
+    );
+  }
+
+  recordMinionSpawn() {
+    this.state.spawnedMinions += 1;
+  }
 }
 
 export function rollMinionKind(
