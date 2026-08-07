@@ -19,6 +19,8 @@ export class BootScene extends Phaser.Scene {
     this.load.spritesheet('enemy-monster', assets.monster, { frameWidth: 48, frameHeight: 48 });
     this.load.spritesheet('enemy-monster2', assets.monster2, { frameWidth: 64, frameHeight: 64 });
     this.load.spritesheet('enemy-monster3', assets.monster3, { frameWidth: 48, frameHeight: 48 });
+    this.load.image('boss-dragon-black', assets.dragonBlack);
+    this.load.image('boss-dragon-green', assets.dragonGreen);
     this.load.image('start', assets.start);
     this.load.image('gameover', assets.gameover);
     this.load.image('restart', assets.restart);

@@ -2,6 +2,8 @@ import apple from '../../assets/apple.png';
 import banana from '../../assets/bananer.png';
 import bread from '../../assets/bread.png';
 import cheese from '../../assets/chess.png';
+import dragonBlack from '../../assets/dragon_black.png';
+import dragonGreen from '../../assets/dragon_green.png';
 import gameover from '../../assets/gameover.png';
 import ghost from '../../assets/ghost.png';
 import monster from '../../assets/monster.png';
@@ -18,6 +20,8 @@ export const assets = {
   monster,
   monster2,
   monster3,
+  dragonBlack,
+  dragonGreen,
   start,
   gameover,
   restart,

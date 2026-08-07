@@ -37,12 +37,6 @@ export interface MonsterDamageResult {
   defeated: boolean;
 }
 
-export const MONSTER_AGGRO_ENTER_DISTANCE = 320;
-export const MONSTER_AGGRO_EXIT_DISTANCE = 440;
-export const MONSTER_PATROL_RADIUS = 160;
-export const MONSTER_PATROL_REACH_DISTANCE = 14;
-export const MONSTER_MAX_CHASE_DISTANCE = 600;
-
 export function createMonsterCombatState(
   level = 1,
   homeX = 0,
@@ -138,13 +132,14 @@ export function updateMonsterAggro(
   playerDistance: number,
   homeDistance: number,
 ) {
+  const definition = getEnemyDefinition(state.kind);
   if (state.aggro === 'returning') return state.aggro;
 
-  if (state.aggro === 'idle' && playerDistance <= MONSTER_AGGRO_ENTER_DISTANCE) {
+  if (state.aggro === 'idle' && playerDistance <= definition.aggroEnterDistance) {
     state.aggro = 'chasing';
   } else if (
     state.aggro === 'chasing' &&
-    (playerDistance >= MONSTER_AGGRO_EXIT_DISTANCE || homeDistance >= MONSTER_MAX_CHASE_DISTANCE)
+    (playerDistance >= definition.aggroExitDistance || homeDistance >= definition.maxChaseDistance)
   ) {
     state.aggro = 'returning';
   }

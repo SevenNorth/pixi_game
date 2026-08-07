@@ -15,9 +15,6 @@ import { MapProgression } from '../../game/simulation/MapProgression';
 import {
   applyMonsterDamage,
   createMonsterCombatState,
-  MONSTER_MAX_CHASE_DISTANCE,
-  MONSTER_PATROL_RADIUS,
-  MONSTER_PATROL_REACH_DISTANCE,
   pauseMonsterPatrol,
   setMonsterPatrolTarget,
   finishEnemySkill,
@@ -75,8 +72,7 @@ import {
   updateProjectileView,
 } from '../view/projectiles/ProjectileView';
 import type { ProjectileView, ProjectileVisualStyle } from '../view/projectiles/ProjectileView';
-import { ensureEnemyTexture } from '../view/enemies/createEnemyTexture';
-import { getRandomEnemyVisual } from '../view/enemies/enemyVisualDefinitions';
+import { getRandomBossVisual, getRandomEnemyVisual } from '../view/enemies/enemyVisualDefinitions';
 import type { EnemyVisualDefinition } from '../view/enemies/enemyVisualDefinitions';
 import { ensureObstacleTexture } from '../view/world/createObstacleTexture';
 
@@ -281,8 +277,8 @@ export class GameScene extends Phaser.Scene {
         monster.combat.homeX,
         monster.combat.homeY,
       );
-      const aggro = updateMonsterAggro(monster.combat, playerDistance, homeDistance);
       const enemyDefinition = getEnemyDefinition(monster.combat.kind);
+      const aggro = updateMonsterAggro(monster.combat, playerDistance, homeDistance);
       if (aggro === 'chasing') {
         if (monster.combat.kind === 'normal' || playerDistance > enemyDefinition.preferredRange * 1.25) {
           this.moveMonsterToward(monster, this.player.x, this.player.y, monster.combat.speed);
@@ -292,7 +288,7 @@ export class GameScene extends Phaser.Scene {
           monsterBody.setVelocity(0, 0);
         }
       } else if (aggro === 'returning') {
-        if (homeDistance <= MONSTER_PATROL_REACH_DISTANCE) {
+        if (homeDistance <= enemyDefinition.patrolReachDistance) {
           monster.combat.aggro = 'idle';
           pauseMonsterPatrol(
             monster.combat,
@@ -302,7 +298,7 @@ export class GameScene extends Phaser.Scene {
         } else {
           this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
         }
-      } else if (homeDistance > MONSTER_PATROL_RADIUS * 1.25) {
+      } else if (homeDistance > enemyDefinition.patrolRadius * 1.25) {
         setMonsterPatrolTarget(monster.combat, monster.combat.homeX, monster.combat.homeY, 0);
         this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
       } else if (this.gameplayTime < monster.combat.patrolPauseUntil) {
@@ -310,7 +306,10 @@ export class GameScene extends Phaser.Scene {
       } else {
         if (!monster.combat.patrolTargetActive) {
           const patrolAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-          const patrolDistance = Phaser.Math.FloatBetween(60, MONSTER_PATROL_RADIUS);
+          const patrolDistance = Phaser.Math.FloatBetween(
+            enemyDefinition.patrolRadius * 0.4,
+            enemyDefinition.patrolRadius,
+          );
           setMonsterPatrolTarget(
             monster.combat,
             monster.combat.homeX + Math.cos(patrolAngle) * patrolDistance,
@@ -324,7 +323,7 @@ export class GameScene extends Phaser.Scene {
           monster.combat.patrolTargetX,
           monster.combat.patrolTargetY,
         );
-        if (patrolDistance <= MONSTER_PATROL_REACH_DISTANCE) {
+        if (patrolDistance <= enemyDefinition.patrolReachDistance) {
           pauseMonsterPatrol(
             monster.combat,
             this.gameplayTime + Phaser.Math.FloatBetween(300, 700),
@@ -534,11 +533,13 @@ export class GameScene extends Phaser.Scene {
     if (this.ended) return;
     const point = this.getSpawnPoint(450);
     const kind = this.getNextEnemyKind();
+    const definition = getEnemyDefinition(kind);
     const visualDefinition = kind === 'boss' ? undefined : getRandomEnemyVisual();
+    const bossVisual = kind === 'boss' ? getRandomBossVisual() : undefined;
     const monster = this.physics.add.sprite(
       point.x,
       point.y,
-      visualDefinition?.textureKey ?? ensureEnemyTexture(this, kind),
+      visualDefinition?.textureKey ?? bossVisual!.textureKey,
       0,
     ) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
@@ -550,7 +551,7 @@ export class GameScene extends Phaser.Scene {
     monster.healthBar.setVisible(false);
     monster.setData('monsterId', monster.monsterId);
     if (visualDefinition) {
-      const sizeMultiplier = kind === 'elite' ? 2 : 1;
+      const sizeMultiplier = definition.sizeMultiplier;
       monster.setDisplaySize(
         visualDefinition.displayWidth * sizeMultiplier,
         visualDefinition.displayHeight * sizeMultiplier,
@@ -563,10 +564,11 @@ export class GameScene extends Phaser.Scene {
       );
       monster.play(`${visualDefinition.animationPrefix}-down`);
     } else {
-      const size = 64;
-      monster.setSize(size, size).setOffset((88 - size) / 2, (88 - size) / 2);
-      monster.setScale(1.1);
+      const displaySize = 48 * definition.sizeMultiplier;
+      monster.setDisplaySize(displaySize, displaySize);
+      monster.setSize(400, 420).setOffset(120, 150);
       monster.setData('enemyKind', kind);
+      monster.setData('bossVisual', bossVisual!.id);
     }
     this.monsters.add(monster);
   }
@@ -730,6 +732,7 @@ export class GameScene extends Phaser.Scene {
       ? 'enemy-skill'
       : monster.visualDefinition?.projectileStyle ?? 'enemy-ghost';
     const visualLength = getProjectileVisualLength(visualStyle);
+    const muzzleDistance = Math.max(24, monster.displayWidth * 0.42);
     const projectile = createProjectileState({
       id: `projectile-${this.bulletId++}`,
       ownerId: monster.monsterId,
@@ -742,8 +745,8 @@ export class GameScene extends Phaser.Scene {
     });
     this.spawnProjectile(
       projectile,
-      monster.x + directionX * (24 + visualLength / 2),
-      monster.y + directionY * (24 + visualLength / 2),
+      monster.x + directionX * (muzzleDistance + visualLength / 2),
+      monster.y + directionY * (muzzleDistance + visualLength / 2),
       visualStyle,
     );
   }
@@ -955,7 +958,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateMonsterHealthBar(monster: MonsterSprite) {
     if (!monster.healthBar.visible || !monster.active) return;
-    const width = monster.combat.kind === 'boss' ? 88 : monster.combat.kind === 'elite' ? 76 : 36;
+    const width = monster.combat.kind === 'boss' ? 120 : monster.combat.kind === 'elite' ? 76 : 36;
     const height = 4;
     const ratio = Phaser.Math.Clamp(monster.combat.hp / monster.combat.maxHp, 0, 1);
     const healthBarY = monster.y - monster.displayHeight / 2 - 8;

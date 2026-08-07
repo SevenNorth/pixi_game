@@ -16,6 +16,11 @@ export interface EnemyVisualDefinition {
   directionFrames: Record<'down' | 'left' | 'right' | 'up', number[]>;
 }
 
+export interface BossVisualDefinition {
+  id: 'dragon-black' | 'dragon-green';
+  textureKey: 'boss-dragon-black' | 'boss-dragon-green';
+}
+
 const directions = ['down', 'left', 'right', 'up'] as const;
 
 function createFourByFourVisual(
@@ -81,6 +86,15 @@ export function getRandomEnemyVisual() {
   return Phaser.Utils.Array.GetRandom(
     enemyVisualDefinitions.filter(definition => definition.source === source),
   );
+}
+
+const bossVisualDefinitions: BossVisualDefinition[] = [
+  { id: 'dragon-black', textureKey: 'boss-dragon-black' },
+  { id: 'dragon-green', textureKey: 'boss-dragon-green' },
+];
+
+export function getRandomBossVisual() {
+  return Phaser.Utils.Array.GetRandom(bossVisualDefinitions);
 }
 
 export function createEnemyAnimations(scene: Phaser.Scene) {

@@ -14,6 +14,12 @@ export interface EnemyDefinition {
   skillCooldownMs: number;
   skillKinds: readonly EnemySkillKind[];
   warningMs: number;
+  sizeMultiplier: number;
+  patrolRadius: number;
+  patrolReachDistance: number;
+  aggroEnterDistance: number;
+  aggroExitDistance: number;
+  maxChaseDistance: number;
 }
 
 export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
@@ -30,6 +36,12 @@ export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
     skillCooldownMs: 0,
     skillKinds: [],
     warningMs: 0,
+    sizeMultiplier: 1,
+    patrolRadius: 160,
+    patrolReachDistance: 14,
+    aggroEnterDistance: 320,
+    aggroExitDistance: 440,
+    maxChaseDistance: 600,
   },
   elite: {
     kind: 'elite',
@@ -37,13 +49,19 @@ export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
     contactDamage: 1,
     projectileDamage: 0.5,
     skillDamage: 1,
-    speed: 112,
+    speed: 82,
     experience: 4,
     preferredRange: 240,
     attackCooldownMs: 2100,
     skillCooldownMs: 4200,
     skillKinds: ['aimed-shot'],
     warningMs: 480,
+    sizeMultiplier: 2,
+    patrolRadius: 240,
+    patrolReachDistance: 20,
+    aggroEnterDistance: 420,
+    aggroExitDistance: 560,
+    maxChaseDistance: 760,
   },
   boss: {
     kind: 'boss',
@@ -51,13 +69,19 @@ export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
     contactDamage: 1,
     projectileDamage: 0.5,
     skillDamage: 1.5,
-    speed: 76,
+    speed: 58,
     experience: 12,
     preferredRange: 300,
     attackCooldownMs: 1300,
     skillCooldownMs: 3600,
     skillKinds: ['radial-burst', 'aimed-shot'],
     warningMs: 720,
+    sizeMultiplier: 3.5,
+    patrolRadius: 320,
+    patrolReachDistance: 28,
+    aggroEnterDistance: 560,
+    aggroExitDistance: 720,
+    maxChaseDistance: 960,
   },
 };
 
