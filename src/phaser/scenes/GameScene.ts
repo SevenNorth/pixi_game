@@ -34,7 +34,7 @@ import { PlayerProgression } from '../../game/simulation/PlayerProgression';
 import { PlayerSkillSystem } from '../../game/simulation/PlayerSkillSystem';
 import type { PlayerSkillRuntimeEvent } from '../../game/simulation/PlayerSkillSystem';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
-import { PlayerVitals } from '../../game/simulation/PlayerVitals';
+import { PLAYER_INVULNERABILITY_MS, PlayerVitals } from '../../game/simulation/PlayerVitals';
 import { resolveSkillTarget } from '../../game/simulation/SkillTargeting';
 import {
   canProjectileHit,
@@ -51,7 +51,7 @@ import {
   showLevelUp,
   showMenu,
   updateHud,
-  updateMapLevel,
+  updateMapProgression,
   updatePassiveSkills,
   updateProgression,
   updateSkillSlots,
@@ -97,6 +97,7 @@ interface FoodSprite extends Phaser.Physics.Arcade.Image {
 
 interface ObstacleSprite extends Phaser.Physics.Arcade.Image {
   obstacleId: string;
+  obstacleKind: WorldObstacleState['kind'];
 }
 
 export class GameScene extends Phaser.Scene {
@@ -104,7 +105,8 @@ export class GameScene extends Phaser.Scene {
   private monsters!: Phaser.Physics.Arcade.Group;
   private foods!: Phaser.Physics.Arcade.Group;
   private projectiles!: Phaser.Physics.Arcade.Group;
-  private obstacles!: Phaser.Physics.Arcade.StaticGroup;
+  private walls!: Phaser.Physics.Arcade.StaticGroup;
+  private bushes!: Phaser.Physics.Arcade.StaticGroup;
   private inputController!: PhaserInputController;
   private killed = 0;
   private monsterTimer?: Phaser.Time.TimerEvent;
@@ -153,7 +155,7 @@ export class GameScene extends Phaser.Scene {
     window.addEventListener('restart-game', this.restart, { once: true });
     showHud();
     updateHud(this.killed);
-    updateMapLevel(this.mapProgression.state.level);
+    this.updateMapProgressionHud();
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
@@ -187,7 +189,8 @@ export class GameScene extends Phaser.Scene {
     this.monsters = this.physics.add.group();
     this.foods = this.physics.add.group();
     this.projectiles = this.physics.add.group();
-    this.obstacles = this.physics.add.staticGroup();
+    this.walls = this.physics.add.staticGroup();
+    this.bushes = this.physics.add.staticGroup();
     this.cameras.main.setBounds(
       -WORLD_RUNTIME_HALF_EXTENT,
       -WORLD_RUNTIME_HALF_EXTENT,
@@ -200,11 +203,12 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.projectiles, this.player, this.onProjectileHitPlayer, undefined, this);
     this.physics.add.overlap(this.player, this.foods, this.onFoodEat, undefined, this);
     this.physics.add.overlap(this.player, this.monsters, this.onMonsterCatch, undefined, this);
-    this.physics.add.collider(this.player, this.obstacles);
-    this.physics.add.collider(this.monsters, this.obstacles);
+    this.physics.add.collider(this.player, this.walls);
+    this.physics.add.collider(this.monsters, this.walls);
+    this.physics.add.collider(this.monsters, this.bushes);
     this.physics.add.collider(
       this.projectiles,
-      this.obstacles,
+      this.walls,
       this.onProjectileHitObstacle,
       undefined,
       this,
@@ -533,6 +537,10 @@ export class GameScene extends Phaser.Scene {
     if (this.ended) return;
     const point = this.getSpawnPoint(450);
     const kind = this.getNextEnemyKind();
+    if (kind === 'boss') {
+      if (!this.mapProgression.markBossSpawned()) return;
+      this.updateMapProgressionHud();
+    }
     const definition = getEnemyDefinition(kind);
     const visualDefinition = kind === 'boss' ? undefined : getRandomEnemyVisual();
     const bossVisual = kind === 'boss' ? getRandomBossVisual() : undefined;
@@ -543,7 +551,14 @@ export class GameScene extends Phaser.Scene {
       0,
     ) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
-    monster.combat = createMonsterCombatState(1, point.x, point.y, kind, this.gameplayTime);
+    const monsterLevel = kind === 'boss' ? this.mapProgression.state.level : 1;
+    monster.combat = createMonsterCombatState(
+      monsterLevel,
+      point.x,
+      point.y,
+      kind,
+      this.gameplayTime,
+    );
     monster.animationDirection = 'down';
     monster.visualDefinition = visualDefinition;
     monster.animationPrefix = visualDefinition?.animationPrefix;
@@ -574,9 +589,27 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getNextEnemyKind(): EnemyKind {
-    if (this.monsterId > 0 && this.monsterId % 10 === 0) return 'boss';
-    if (this.monsterId > 0 && this.monsterId % 3 === 0) return 'elite';
+    if (
+      this.mapProgression.state.status === 'boss-ready' &&
+      !this.hasActiveBoss()
+    ) return 'boss';
+    if (
+      this.mapProgression.state.level >= 2 &&
+      this.monsterId > 0 &&
+      this.monsterId % 3 === 0
+    ) return 'elite';
     return 'normal';
+  }
+
+  private hasActiveBoss() {
+    return this.monsters.children.entries.some(child => {
+      const monster = child as MonsterSprite;
+      return (
+        monster.active &&
+        monster.combat.kind === 'boss' &&
+        !monster.getData('defeated')
+      );
+    });
   }
 
   private spawnFood() {
@@ -592,12 +625,26 @@ export class GameScene extends Phaser.Scene {
 
   private syncWorldChunks() {
     const delta = this.world.syncAround(this.player.x, this.player.y);
+    if (this.mapProgression.gainExplorationExperience(delta.discovered.length) > 0) {
+      this.updateMapProgressionHud();
+    }
     delta.exited.forEach(chunk => this.removeWorldChunk(chunk));
     delta.entered.forEach(chunk => this.addWorldChunk(chunk));
   }
 
   private addWorldChunk(chunk: WorldChunkState) {
-    chunk.obstacles.forEach(obstacle => this.addWorldObstacle(obstacle));
+    const formations = new Map<string, WorldObstacleState[]>();
+    chunk.obstacles.forEach(obstacle => {
+      const formation = formations.get(obstacle.formationId) ?? [];
+      formation.push(obstacle);
+      formations.set(obstacle.formationId, formation);
+    });
+    formations.forEach(formation => {
+      if (!formation.every(obstacle => this.isWorldPositionClear(obstacle.x, obstacle.y, 90))) {
+        return;
+      }
+      formation.forEach(obstacle => this.addWorldObstacle(obstacle));
+    });
   }
 
   private removeWorldChunk(chunk: WorldChunkState) {
@@ -611,16 +658,18 @@ export class GameScene extends Phaser.Scene {
 
   private addWorldObstacle(obstacle: WorldObstacleState) {
     if (this.obstacleSprites.has(obstacle.id)) return;
-    if (!this.isWorldPositionClear(obstacle.x, obstacle.y, 90)) return;
-    const sprite = this.obstacles.create(
+    const group = obstacle.kind === 'wall' ? this.walls : this.bushes;
+    const sprite = group.create(
       obstacle.x,
       obstacle.y,
-      ensureObstacleTexture(this),
+      ensureObstacleTexture(this, obstacle.kind),
     ) as ObstacleSprite;
     sprite.obstacleId = obstacle.id;
+    sprite.obstacleKind = obstacle.kind;
     sprite.setDisplaySize(obstacle.width, obstacle.height);
     sprite.setRotation(obstacle.rotation);
-    sprite.setDepth(0);
+    sprite.setDepth(obstacle.kind === 'bush' ? 3 : 1);
+    if (obstacle.kind === 'bush') sprite.setAlpha(0.9);
     sprite.refreshBody();
     this.obstacleSprites.set(obstacle.id, sprite);
   }
@@ -775,7 +824,7 @@ export class GameScene extends Phaser.Scene {
 
   private applyPlayerDamage(damage: number) {
     const result = this.vitals.takeDamage(damage, this.gameplayTime);
-    if (!result.applied) return;
+    if (!result.applied) return result;
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
@@ -784,6 +833,7 @@ export class GameScene extends Phaser.Scene {
     );
     this.playDamageFeedback();
     if (result.defeated) this.endGame();
+    return result;
   }
 
   private playDirectionalAnimation(
@@ -859,6 +909,12 @@ export class GameScene extends Phaser.Scene {
     monster.healthBar.destroy();
     playMonsterDefeat(this, monster);
     this.killed += 1;
+    if (monster.combat.kind === 'boss') {
+      this.mapProgression.completeBoss();
+    } else {
+      this.mapProgression.gainKillExperience(monster.combat.level);
+    }
+    this.updateMapProgressionHud();
     const experienceResult = this.progression.gainExperience(monster.combat.experience);
     updateHud(this.killed);
     updateProgression(
@@ -867,6 +923,16 @@ export class GameScene extends Phaser.Scene {
       this.progression.state.experienceToNext,
     );
     if (experienceResult.levelUps > 0) this.handleLevelUp(experienceResult.levelUps);
+  }
+
+  private updateMapProgressionHud() {
+    const state = this.mapProgression.state;
+    updateMapProgression(
+      state.level,
+      state.experience,
+      state.experienceToNext,
+      state.status,
+    );
   }
 
   private onProjectileHitPlayer: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
@@ -925,21 +991,18 @@ export class GameScene extends Phaser.Scene {
 
   private onMonsterCatch: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (_playerObject, monsterObject) => {
     const monster = monsterObject as unknown as MonsterSprite;
-    const result = this.vitals.takeDamage(monster.combat.contactDamage, this.gameplayTime);
+    const result = this.applyPlayerDamage(monster.combat.contactDamage);
     if (!result.applied) return;
-
-    monster.healthBar.destroy();
-    monster.warningView?.destroy();
-    monster.warningView = undefined;
-    monster.destroy();
-    updateVitals(
-      this.vitals.state.hp,
-      this.vitals.state.maxHp,
-      this.vitals.state.shield,
-      this.vitals.state.maxShield,
+    const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, monster.x, monster.y);
+    const separation = Math.max(
+      48,
+      (this.player.displayWidth + monster.displayWidth) * 0.35,
     );
-    this.playDamageFeedback();
-    if (result.defeated) this.endGame();
+    const body = monster.body as Phaser.Physics.Arcade.Body;
+    body.reset(
+      this.player.x + Math.cos(angle) * separation,
+      this.player.y + Math.sin(angle) * separation,
+    );
   };
 
   private playDamageFeedback() {
@@ -949,9 +1012,9 @@ export class GameScene extends Phaser.Scene {
     this.damageTween = this.tweens.add({
       targets: this.player,
       alpha: 0.25,
-      duration: 90,
+      duration: PLAYER_INVULNERABILITY_MS / 10,
       yoyo: true,
-      repeat: 5,
+      repeat: 4,
       onComplete: () => this.player.setAlpha(1),
     });
   }

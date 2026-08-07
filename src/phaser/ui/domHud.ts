@@ -5,6 +5,7 @@ import type { PassiveSkillId } from '../../game/content/skills/passiveSkillDefin
 import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinitions';
 import type { PassiveSkillSlot } from '../../game/simulation/PlayerPassiveSystem';
 import type { PlayerSkillSlotState } from '../../game/simulation/PlayerSkillSystem';
+import type { MapProgressionStatus } from '../../game/simulation/MapProgression';
 
 let root: HTMLElement;
 let hud: HTMLElement;
@@ -17,6 +18,8 @@ let level: HTMLElement;
 let mapLevel: HTMLElement;
 let experienceBar: HTMLElement;
 let experienceLabel: HTMLElement;
+let mapExperienceBar: HTMLElement;
+let mapExperienceLabel: HTMLElement;
 let levelUp: HTMLElement;
 let skillDock: HTMLElement;
 let activeSkillSlots: HTMLElement[];
@@ -46,6 +49,13 @@ export function initDomHud(container: HTMLElement) {
         <span id="experience-bar" class="experience-bar"></span>
       </div>
       <div id="experience-label" class="experience-label">${t('experienceValue', { experience: 0, next: 3 })}</div>
+      <div class="map-progress">
+        <div class="map-progress-title">${t('mapExperience')}</div>
+        <div class="experience-track map-experience-track" aria-label="${t('mapExperience')}">
+          <span id="map-experience-bar" class="experience-bar map-experience-bar"></span>
+        </div>
+        <div id="map-experience-label" class="experience-label map-experience-label">${t('mapExperienceValue', { experience: 0, next: 12 })}</div>
+      </div>
     </div>
     <div id="game-menu" class="game-menu">
       <div class="menu-actions">
@@ -92,6 +102,8 @@ export function initDomHud(container: HTMLElement) {
   mapLevel = root.querySelector('#map-level') as HTMLElement;
   experienceBar = root.querySelector('#experience-bar') as HTMLElement;
   experienceLabel = root.querySelector('#experience-label') as HTMLElement;
+  mapExperienceBar = root.querySelector('#map-experience-bar') as HTMLElement;
+  mapExperienceLabel = root.querySelector('#map-experience-label') as HTMLElement;
   levelUp = root.querySelector('#level-up') as HTMLElement;
   skillDock = root.querySelector('#skill-dock') as HTMLElement;
   activeSkillSlots = Array.from(root.querySelectorAll('.active-skill-slot'));
@@ -166,6 +178,22 @@ export function updateProgression(levelNumber: number, experience: number, exper
 
 export function updateMapLevel(levelNumber: number) {
   mapLevel.textContent = t('mapLevel', { level: levelNumber });
+}
+
+export function updateMapProgression(
+  levelNumber: number,
+  experience: number,
+  experienceToNext: number,
+  status: MapProgressionStatus,
+) {
+  updateMapLevel(levelNumber);
+  const progress = experienceToNext > 0 ? Math.min(1, experience / experienceToNext) : 1;
+  mapExperienceBar.style.width = `${progress * 100}%`;
+  mapExperienceLabel.textContent = status === 'boss-active'
+    ? t('mapBossActive')
+    : status === 'boss-ready'
+      ? t('mapBossReady')
+      : t('mapExperienceValue', { experience, next: experienceToNext });
 }
 
 const playerSkillNameKeys: Record<PlayerSkillId, MessageKey> = {

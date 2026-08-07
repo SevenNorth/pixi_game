@@ -1,16 +1,18 @@
 export const WORLD_CHUNK_SIZE = 640;
 export const WORLD_ACTIVE_RADIUS = 1;
-const OBSTACLE_COUNT_MIN = 3;
-const OBSTACLE_COUNT_MAX = 6;
 const SPAWN_CLEARANCE_RADIUS = 150;
+
+export type WorldObstacleKind = 'wall' | 'bush';
 
 export interface WorldObstacleState {
   id: string;
+  formationId: string;
   x: number;
   y: number;
   width: number;
   height: number;
   rotation: number;
+  kind: WorldObstacleKind;
 }
 
 export interface WorldChunkState {
@@ -74,30 +76,46 @@ export class InfiniteWorldSystem {
     const id = `${chunkX}:${chunkY}`;
     const random = createSeededRandom(hashChunk(chunkX, chunkY));
     const obstacles: WorldObstacleState[] = [];
-    const count = OBSTACLE_COUNT_MIN + Math.floor(random() * (OBSTACLE_COUNT_MAX - OBSTACLE_COUNT_MIN + 1));
     const originX = chunkX * WORLD_CHUNK_SIZE;
     const originY = chunkY * WORLD_CHUNK_SIZE;
+    const quadrantCenters = [
+      { x: 130, y: 130 },
+      { x: 510, y: 130 },
+      { x: 130, y: 510 },
+      { x: 510, y: 510 },
+    ];
+    const densityRoll = random();
+    const formationCount = densityRoll < 0.25 ? 0 : densityRoll < 0.8 ? 1 : 2;
+    const availableQuadrants = [...quadrantCenters];
 
-    for (let index = 0; index < count; index += 1) {
-      const width = 48 + Math.floor(random() * 56);
-      const height = 40 + Math.floor(random() * 48);
-      const x = originX + 64 + random() * (WORLD_CHUNK_SIZE - 128);
-      const y = originY + 64 + random() * (WORLD_CHUNK_SIZE - 128);
-      if (Math.hypot(x, y) < SPAWN_CLEARANCE_RADIUS) continue;
-      const localX = x - originX;
-      const localY = y - originY;
-      if (
-        Math.abs(localX - WORLD_CHUNK_SIZE / 2) < 86 ||
-        Math.abs(localY - WORLD_CHUNK_SIZE / 2) < 86
-      ) continue;
-      obstacles.push({
-        id: `obstacle-${id}-${index}`,
-        x,
-        y,
-        width,
-        height,
-        rotation: (random() - 0.5) * 0.24,
-      });
+    for (let formationIndex = 0; formationIndex < formationCount; formationIndex += 1) {
+      const quadrantIndex = Math.floor(random() * availableQuadrants.length);
+      const center = availableQuadrants.splice(quadrantIndex, 1)[0];
+      const kind: WorldObstacleKind = random() < 0.5 ? 'wall' : 'bush';
+      const horizontal = random() < 0.5;
+      const segmentCount = 3 + Math.floor(random() * 2);
+      const spacing = 48;
+      const span = (segmentCount - 1) * spacing;
+      const centerX = originX + center.x + (random() - 0.5) * 34;
+      const centerY = originY + center.y + (random() - 0.5) * 34;
+      const formationId = `formation-${id}-${formationIndex}`;
+
+      for (let segmentIndex = 0; segmentIndex < segmentCount; segmentIndex += 1) {
+        const offset = -span / 2 + segmentIndex * spacing;
+        const x = centerX + (horizontal ? offset : 0);
+        const y = centerY + (horizontal ? 0 : offset);
+        if (Math.hypot(x, y) < SPAWN_CLEARANCE_RADIUS) continue;
+        obstacles.push({
+          id: `obstacle-${id}-${formationIndex}-${segmentIndex}`,
+          formationId,
+          x,
+          y,
+          width: kind === 'wall' ? 54 : 58,
+          height: kind === 'wall' ? 54 : 58,
+          rotation: 0,
+          kind,
+        });
+      }
     }
     return { id, chunkX, chunkY, obstacles };
   }

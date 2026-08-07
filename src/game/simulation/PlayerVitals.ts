@@ -15,7 +15,7 @@ export interface DamageResult {
 
 const DEFAULT_MAX_HP = 3;
 const DEFAULT_MAX_SHIELD = 3;
-const INVULNERABILITY_MS = 1000;
+export const PLAYER_INVULNERABILITY_MS = 1000;
 
 export class PlayerVitals {
   readonly state: PlayerVitalsState = {
@@ -61,7 +61,7 @@ export class PlayerVitals {
     this.state.shield -= shieldLost;
     const hpLost = Math.min(this.state.hp, amount - shieldLost);
     this.state.hp -= hpLost;
-    this.state.invulnerableUntil = now + INVULNERABILITY_MS;
+    this.state.invulnerableUntil = now + PLAYER_INVULNERABILITY_MS;
 
     return {
       applied: true,
