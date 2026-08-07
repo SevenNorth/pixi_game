@@ -21,8 +21,14 @@ import type { CardinalDirection, PlayerDirectionState } from '../../game/simulat
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
 import { PlayerVitals } from '../../game/simulation/PlayerVitals';
+import {
+  canProjectileHit,
+  createProjectileState,
+  isProjectileCollisionEnabled,
+} from '../../game/simulation/ProjectileSystem';
 import { t } from '../../i18n';
 import { assets, foodKeys } from '../assets/manifest';
+import { PhaserInputController } from '../input/PhaserInputController';
 import {
   hideLevelUp,
   hideMenu,
@@ -35,9 +41,14 @@ import {
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
+import {
+  createProjectileView,
+  PROJECTILE_VISUAL_LENGTH,
+  syncProjectileVisual,
+  updateProjectileView,
+} from '../view/projectiles/ProjectileView';
+import type { ProjectileView } from '../view/projectiles/ProjectileView';
 
-const BULLET_LENGTH = 64;
-const BULLET_THICKNESS = 20;
 const BULLET_SPEED = 420;
 
 interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
@@ -53,25 +64,12 @@ interface FoodSprite extends Phaser.Physics.Arcade.Image {
   expiresAt: number;
 }
 
-interface BulletSprite extends Phaser.GameObjects.Zone {
-  lightning: Phaser.GameObjects.Graphics;
-  damage: number;
-  directionX: number;
-  directionY: number;
-  remainingDistance: number;
-  flickerElapsed: number;
-  collisionEnabledAt: number;
-  launched: boolean;
-}
-
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private monsters!: Phaser.Physics.Arcade.Group;
   private foods!: Phaser.Physics.Arcade.Group;
-  private bullets!: Phaser.Physics.Arcade.Group;
-  private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
-  private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
-  private space!: Phaser.Input.Keyboard.Key;
+  private projectiles!: Phaser.Physics.Arcade.Group;
+  private inputController!: PhaserInputController;
   private killed = 0;
   private monsterTimer?: Phaser.Time.TimerEvent;
   private foodTimer?: Phaser.Time.TimerEvent;
@@ -120,14 +118,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.physics.world.setBounds(-4000, -4000, 8000, 8000);
-    this.cursors = this.input.keyboard!.createCursorKeys();
-    this.wasd = this.input.keyboard!.addKeys('W,A,S,D') as Record<
-      'W' | 'A' | 'S' | 'D',
-      Phaser.Input.Keyboard.Key
-    >;
-    this.space = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-    this.input.keyboard!.on('keydown-P', this.togglePause, this);
-    this.input.keyboard!.on('keydown-R', this.restart, this);
+    this.inputController = new PhaserInputController(this.input.keyboard!);
     this.events.on(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
 
@@ -139,11 +130,12 @@ export class GameScene extends Phaser.Scene {
 
     this.monsters = this.physics.add.group();
     this.foods = this.physics.add.group();
-    this.bullets = this.physics.add.group();
+    this.projectiles = this.physics.add.group();
     this.cameras.main.setBounds(-4000, -4000, 8000, 8000);
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
-    this.physics.add.overlap(this.bullets, this.monsters, this.onBulletHit, undefined, this);
+    this.physics.add.overlap(this.projectiles, this.monsters, this.onProjectileHitMonster, undefined, this);
+    this.physics.add.overlap(this.projectiles, this.player, this.onProjectileHitPlayer, undefined, this);
     this.physics.add.overlap(this.player, this.foods, this.onFoodEat, undefined, this);
     this.physics.add.overlap(this.player, this.monsters, this.onMonsterCatch, undefined, this);
 
@@ -153,21 +145,19 @@ export class GameScene extends Phaser.Scene {
   }
 
   shutdown() {
-    this.input.keyboard?.off('keydown-P', this.togglePause, this);
-    this.input.keyboard?.off('keydown-R', this.restart, this);
     this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     window.removeEventListener('restart-game', this.restart);
   }
 
   update(_time: number, delta: number) {
+    const inputFrame = this.inputController.readFrame();
+    if (inputFrame.pausePressed && !this.ended) this.togglePause();
+    if (inputFrame.restartPressed) this.restart();
     if (this.ended || this.paused) return;
     this.gameplayTime += Math.min(delta, 50);
     const speed = 180;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
-    const horizontal = Number(this.cursors.right.isDown || this.wasd.D.isDown)
-      - Number(this.cursors.left.isDown || this.wasd.A.isDown);
-    const vertical = Number(this.cursors.down.isDown || this.wasd.S.isDown)
-      - Number(this.cursors.up.isDown || this.wasd.W.isDown);
+    const { horizontal, vertical } = inputFrame;
     updatePlayerDirection(this.playerDirection, horizontal, vertical);
     body.setVelocity(
       this.playerDirection.movementVector.x * speed,
@@ -178,7 +168,7 @@ export class GameScene extends Phaser.Scene {
     } else if (this.player.anims.isPlaying && !this.player.anims.isPaused) {
       this.player.anims.pause();
     }
-    if (this.space.isDown) this.handleShoot();
+    if (inputFrame.basicAttackHeld) this.handleShoot();
     this.monsters.children.each(child => {
       const monster = child as MonsterSprite;
       if (monster.getData('defeated')) return null;
@@ -255,20 +245,9 @@ export class GameScene extends Phaser.Scene {
       return null;
     });
 
-    this.bullets.children.each(child => {
-      const bullet = child as BulletSprite;
-      const body = bullet.body as Phaser.Physics.Arcade.Body;
-      if (!bullet.launched && this.gameplayTime >= bullet.collisionEnabledAt) {
-        body.setVelocity(bullet.directionX * BULLET_SPEED, bullet.directionY * BULLET_SPEED);
-        bullet.launched = true;
-      }
-      if (bullet.launched) bullet.remainingDistance -= Math.min(delta, 50) * (BULLET_SPEED / 1000);
-      bullet.flickerElapsed += delta;
-      if (bullet.flickerElapsed >= 70) {
-        bullet.flickerElapsed = 0;
-        this.drawLightning(bullet.lightning, bullet.directionX, bullet.directionY);
-      }
-      if (bullet.remainingDistance <= 0) bullet.destroy();
+    this.projectiles.children.each(child => {
+      const projectileView = child as ProjectileView;
+      if (!updateProjectileView(projectileView, this.gameplayTime, delta)) projectileView.destroy();
       return null;
     });
     this.foods.children.each(child => {
@@ -290,90 +269,33 @@ export class GameScene extends Phaser.Scene {
 
   private shoot() {
     const direction = this.playerDirection.facingVector;
-    const bodyWidth = Math.abs(direction.x) * BULLET_LENGTH + BULLET_THICKNESS;
-    const bodyHeight = Math.abs(direction.y) * BULLET_LENGTH + BULLET_THICKNESS;
-    const lightning = this.add.graphics();
-    const bullet = this.add.zone(
-      this.player.x + direction.x * (24 + BULLET_LENGTH / 2),
-      this.player.y + direction.y * (24 + BULLET_LENGTH / 2),
-      bodyWidth,
-      bodyHeight,
-    ) as BulletSprite;
-    this.physics.add.existing(bullet);
-    this.bullets.add(bullet);
-    bullet.lightning = lightning;
-    lightning.setPosition(bullet.x, bullet.y).setDepth(1);
-    bullet.once(Phaser.GameObjects.Events.DESTROY, () => lightning.destroy());
-    bullet.damage = this.playerAttack;
-    bullet.directionX = direction.x;
-    bullet.directionY = direction.y;
-    bullet.remainingDistance = 500;
-    bullet.flickerElapsed = 0;
-    bullet.collisionEnabledAt = this.gameplayTime + 50;
-    bullet.launched = false;
-    bullet.setData('bulletId', this.bulletId++);
-    const body = bullet.body as Phaser.Physics.Arcade.Body;
-    body.setAllowGravity(false);
-    body.setSize(bodyWidth, bodyHeight);
-    body.setOffset(0, 0);
-    this.drawLightning(lightning, direction.x, direction.y);
-    body.setVelocity(0, 0);
+    const projectile = createProjectileState({
+      id: `projectile-${this.bulletId++}`,
+      ownerId: 'player',
+      faction: 'player',
+      damage: this.playerAttack,
+      velocityX: direction.x * BULLET_SPEED,
+      velocityY: direction.y * BULLET_SPEED,
+      remainingDistance: 500,
+      collisionEnabledAt: this.gameplayTime + 50,
+    });
+    this.spawnProjectile(
+      projectile,
+      this.player.x + direction.x * (24 + PROJECTILE_VISUAL_LENGTH / 2),
+      this.player.y + direction.y * (24 + PROJECTILE_VISUAL_LENGTH / 2),
+    );
+  }
+
+  private spawnProjectile(projectile: ReturnType<typeof createProjectileState>, x: number, y: number) {
+    return createProjectileView(this, this.projectiles, projectile, x, y);
   }
 
   private syncBulletVisuals() {
-    this.bullets.children.each(child => {
-      const bullet = child as BulletSprite;
-      bullet.lightning.setPosition(bullet.x, bullet.y);
+    this.projectiles.children.each(child => {
+      const projectileView = child as ProjectileView;
+      syncProjectileVisual(projectileView);
       return null;
     });
-  }
-
-  private drawLightning(
-    graphics: Phaser.GameObjects.Graphics,
-    directionX: number,
-    directionY: number,
-  ) {
-    const perpendicularX = -directionY;
-    const perpendicularY = directionX;
-    const points: Phaser.Math.Vector2[] = [
-      new Phaser.Math.Vector2(
-        -directionX * BULLET_LENGTH / 2,
-        -directionY * BULLET_LENGTH / 2,
-      ),
-    ];
-    const segments = 6;
-    for (let index = 1; index < segments; index += 1) {
-      const distance = -BULLET_LENGTH / 2 + (BULLET_LENGTH / segments) * index;
-      const jitter = Phaser.Math.Between(-7, 7);
-      points.push(new Phaser.Math.Vector2(
-        directionX * distance + perpendicularX * jitter,
-        directionY * distance + perpendicularY * jitter,
-      ));
-    }
-    points.push(new Phaser.Math.Vector2(
-      directionX * BULLET_LENGTH / 2,
-      directionY * BULLET_LENGTH / 2,
-    ));
-    graphics.clear();
-    this.strokeLightning(graphics, points, 7, 0x1677ff, 0.42);
-    this.strokeLightning(graphics, points, 4, 0x4ebcff, 0.9);
-    this.strokeLightning(graphics, points, 2, 0xf4ffff, 1);
-  }
-
-  private strokeLightning(
-    graphics: Phaser.GameObjects.Graphics,
-    points: Phaser.Math.Vector2[],
-    width: number,
-    color: number,
-    alpha: number,
-  ) {
-    graphics.lineStyle(width, color, alpha);
-    graphics.beginPath();
-    graphics.moveTo(points[0].x, points[0].y);
-    for (let index = 1; index < points.length; index += 1) {
-      graphics.lineTo(points[index].x, points[index].y);
-    }
-    graphics.strokePath();
   }
 
   private spawnMonster() {
@@ -424,12 +346,21 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private onBulletHit: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (bulletObject, monsterObject) => {
-    const bullet = bulletObject as unknown as BulletSprite;
-    const monster = monsterObject as unknown as MonsterSprite;
-    if (monster.getData('defeated') || this.gameplayTime < bullet.collisionEnabledAt) return;
-    bullet.destroy();
-    const damageResult = applyMonsterDamage(monster.combat, bullet.damage);
+  private onProjectileHitMonster: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
+    firstObject,
+    secondObject,
+  ) => {
+    const projectileView = this.resolveProjectileView(firstObject, secondObject);
+    const monster = this.resolveMonsterSprite(firstObject, secondObject);
+    if (!projectileView || !monster) return;
+    const projectile = projectileView.projectile;
+    if (
+      monster.getData('defeated') ||
+      !canProjectileHit(projectile, 'enemy') ||
+      !isProjectileCollisionEnabled(projectile, this.gameplayTime)
+    ) return;
+    projectileView.destroy();
+    const damageResult = applyMonsterDamage(monster.combat, projectile.damage);
     monster.healthBar.setVisible(!damageResult.defeated);
     this.updateMonsterHealthBar(monster);
     if (!damageResult.defeated) {
@@ -449,6 +380,42 @@ export class GameScene extends Phaser.Scene {
     );
     if (experienceResult.levelUps > 0) this.handleLevelUp(experienceResult.levelUps);
   };
+
+  private onProjectileHitPlayer: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
+    firstObject,
+    secondObject,
+  ) => {
+    const projectileView = this.resolveProjectileView(firstObject, secondObject);
+    if (!projectileView) return;
+    const projectile = projectileView.projectile;
+    if (
+      !canProjectileHit(projectile, 'player') ||
+      !isProjectileCollisionEnabled(projectile, this.gameplayTime)
+    ) return;
+    projectileView.destroy();
+    const result = this.vitals.takeDamage(projectile.damage, this.gameplayTime);
+    if (!result.applied) return;
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
+    this.playDamageFeedback();
+    if (result.defeated) this.endGame();
+  };
+
+  private resolveProjectileView(firstObject: unknown, secondObject: unknown) {
+    return [firstObject, secondObject].find(object => (
+      object as Partial<ProjectileView> | undefined
+    )?.projectile) as ProjectileView | undefined;
+  }
+
+  private resolveMonsterSprite(firstObject: unknown, secondObject: unknown) {
+    return [firstObject, secondObject].find(object => (
+      object as Partial<MonsterSprite> | undefined
+    )?.combat) as MonsterSprite | undefined;
+  }
 
   private handleLevelUp(levelUps: number) {
     this.vitals.increaseMaxHp(levelUps, levelUps);
