@@ -1,0 +1,60 @@
+export interface PlayerVitalsState {
+  hp: number;
+  maxHp: number;
+  shield: number;
+  maxShield: number;
+  invulnerableUntil: number;
+}
+
+export interface DamageResult {
+  applied: boolean;
+  hpLost: number;
+  shieldLost: number;
+  defeated: boolean;
+}
+
+const DEFAULT_MAX_HP = 3;
+const DEFAULT_MAX_SHIELD = 3;
+const INVULNERABILITY_MS = 1000;
+
+export class PlayerVitals {
+  readonly state: PlayerVitalsState = {
+    hp: DEFAULT_MAX_HP,
+    maxHp: DEFAULT_MAX_HP,
+    shield: 0,
+    maxShield: DEFAULT_MAX_SHIELD,
+    invulnerableUntil: 0,
+  };
+
+  reset() {
+    this.state.hp = DEFAULT_MAX_HP;
+    this.state.maxHp = DEFAULT_MAX_HP;
+    this.state.shield = 0;
+    this.state.maxShield = DEFAULT_MAX_SHIELD;
+    this.state.invulnerableUntil = 0;
+  }
+
+  increaseMaxHp(amount: number, healAmount = amount) {
+    this.state.maxHp += Math.max(0, amount);
+    this.state.hp = Math.min(this.state.maxHp, this.state.hp + Math.max(0, healAmount));
+  }
+
+  takeDamage(amount: number, now: number): DamageResult {
+    if (amount <= 0 || now < this.state.invulnerableUntil || this.state.hp <= 0) {
+      return { applied: false, hpLost: 0, shieldLost: 0, defeated: this.state.hp <= 0 };
+    }
+
+    const shieldLost = Math.min(this.state.shield, amount);
+    this.state.shield -= shieldLost;
+    const hpLost = Math.min(this.state.hp, amount - shieldLost);
+    this.state.hp -= hpLost;
+    this.state.invulnerableUntil = now + INVULNERABILITY_MS;
+
+    return {
+      applied: true,
+      hpLost,
+      shieldLost,
+      defeated: this.state.hp <= 0,
+    };
+  }
+}

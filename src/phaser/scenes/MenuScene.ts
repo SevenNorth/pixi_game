@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import { t } from '../../i18n';
 import { hideHud, showMenu } from '../ui/domHud';
 
 export class MenuScene extends Phaser.Scene {
@@ -8,7 +9,7 @@ export class MenuScene extends Phaser.Scene {
 
   create() {
     hideHud();
-    showMenu('Arrow keys / WASD to move. Space to attack. P to pause.', true, false);
+    showMenu(t('controls'), true, false);
     window.addEventListener('start-game', this.startGame, { once: true });
   }
 

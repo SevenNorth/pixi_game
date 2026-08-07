@@ -1,10 +1,23 @@
 import Phaser from 'phaser';
+import { PlayerProgression } from '../../game/simulation/PlayerProgression';
+import { PlayerVitals } from '../../game/simulation/PlayerVitals';
+import { t } from '../../i18n';
 import { assets, foodKeys } from '../assets/manifest';
-import { hideMenu, showHud, showMenu, updateHud } from '../ui/domHud';
+import {
+  hideLevelUp,
+  hideMenu,
+  showHud,
+  showLevelUp,
+  showMenu,
+  updateHud,
+  updateProgression,
+  updateVitals,
+} from '../ui/domHud';
+import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 
 type Direction = 'up' | 'right' | 'down' | 'left';
 
-interface MonsterSprite extends Phaser.Physics.Arcade.Image {
+interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   monsterId: string;
 }
 
@@ -40,6 +53,10 @@ export class GameScene extends Phaser.Scene {
   private ended = false;
   private paused = false;
   private lastShotAt = -Infinity;
+  private gameplayTime = 0;
+  private vitals = new PlayerVitals();
+  private progression = new PlayerProgression();
+  private damageTween?: Phaser.Tweens.Tween;
 
   constructor() {
     super('GameScene');
@@ -50,10 +67,26 @@ export class GameScene extends Phaser.Scene {
     this.paused = false;
     this.score = 0;
     this.killed = 0;
+    this.gameplayTime = 0;
+    this.lastShotAt = -Infinity;
+    this.vitals.reset();
+    this.progression.reset();
     hideMenu();
+    hideLevelUp();
     window.addEventListener('restart-game', this.restart, { once: true });
     showHud();
     updateHud(this.score, this.killed);
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
+    updateProgression(
+      this.progression.state.level,
+      this.progression.state.experience,
+      this.progression.state.experienceToNext,
+    );
 
     this.physics.world.setBounds(-4000, -4000, 8000, 8000);
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -65,6 +98,7 @@ export class GameScene extends Phaser.Scene {
     this.space.on('down', this.handleShoot, this);
     this.input.keyboard!.on('keydown-P', this.togglePause, this);
     this.input.keyboard!.on('keydown-R', this.restart, this);
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
 
     this.player = this.physics.add.sprite(0, 0, 'player', 0);
     this.player.setCollideWorldBounds(true);
@@ -95,6 +129,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number) {
     if (this.ended || this.paused) return;
+    this.gameplayTime += Math.min(delta, 50);
     const speed = 180;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
@@ -113,11 +148,13 @@ export class GameScene extends Phaser.Scene {
     }
     this.monsters.children.each(child => {
       const monster = child as MonsterSprite;
+      if (monster.getData('defeated')) return null;
       const angle = Phaser.Math.Angle.Between(monster.x, monster.y, this.player.x, this.player.y);
       const monsterBody = monster.body as Phaser.Physics.Arcade.Body;
       monsterBody.setVelocity(Math.cos(angle) * 98, Math.sin(angle) * 98);
       const face = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle)) ? (Math.cos(angle) < 0 ? 'left' : 'right') : (Math.sin(angle) < 0 ? 'up' : 'down');
       monster.play(`monster-${face}`, true);
+      return null;
     });
 
     this.bullets.children.each(child => {
@@ -133,10 +170,12 @@ export class GameScene extends Phaser.Scene {
       }
       (bullet.body as Phaser.Physics.Arcade.Body).updateFromGameObject();
       if (bullet.remainingDistance <= 0) bullet.destroy();
+      return null;
     });
     this.foods.children.each(child => {
       const food = child as FoodSprite;
       if (this.time.now > food.expiresAt) food.destroy();
+      return null;
     });
   }
 
@@ -210,7 +249,7 @@ export class GameScene extends Phaser.Scene {
   private spawnMonster() {
     if (this.ended) return;
     const point = this.getSpawnPoint(450);
-    const monster = this.physics.add.sprite(point.x, point.y, 'monster', 0) as MonsterSprite;
+    const monster = this.physics.add.sprite(point.x, point.y, 'monster', 0) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
     monster.setData('monsterId', monster.monsterId);
     monster.setSize(34, 48).setOffset(7, 8);
@@ -235,34 +274,81 @@ export class GameScene extends Phaser.Scene {
     return { x: this.player.x + Math.cos(angle) * distance, y: this.player.y + Math.sin(angle) * distance };
   }
 
-  private onBulletHit(bulletObject: Phaser.GameObjects.GameObject, monsterObject: Phaser.GameObjects.GameObject) {
-    const bullet = bulletObject as BulletSprite;
-    const monster = monsterObject as MonsterSprite;
+  private onBulletHit: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (bulletObject, monsterObject) => {
+    const bullet = bulletObject as unknown as BulletSprite;
+    const monster = monsterObject as unknown as MonsterSprite;
+    if (monster.getData('defeated')) return;
+    monster.setData('defeated', true);
     bullet.destroy();
-    monster.destroy();
+    playMonsterDefeat(this, monster);
     this.killed += 1;
+    const experienceResult = this.progression.gainExperience(1);
     updateHud(this.score, this.killed);
-  }
+    updateProgression(
+      this.progression.state.level,
+      this.progression.state.experience,
+      this.progression.state.experienceToNext,
+    );
+    if (experienceResult.levelUps > 0) this.handleLevelUp(experienceResult.levelUps);
+  };
 
-  private onFoodEat(playerObject: Phaser.GameObjects.GameObject, foodObject: Phaser.GameObjects.GameObject) {
-    const food = foodObject as FoodSprite;
+  private handleLevelUp(levelUps: number) {
+    this.vitals.increaseMaxHp(levelUps, levelUps);
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
+    showLevelUp(this.progression.state.level, levelUps);
+  };
+
+  private onFoodEat: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (playerObject, foodObject) => {
+    const food = foodObject as unknown as FoodSprite;
     food.destroy();
     this.score += food.value;
     updateHud(this.score, this.killed);
     void playerObject;
-  }
+  };
 
-  private onMonsterCatch() {
-    this.endGame();
+  private onMonsterCatch: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (_playerObject, monsterObject) => {
+    const result = this.vitals.takeDamage(1, this.gameplayTime);
+    if (!result.applied) return;
+
+    (monsterObject as unknown as Phaser.GameObjects.GameObject).destroy();
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
+    this.playDamageFeedback();
+    if (result.defeated) this.endGame();
+  };
+
+  private playDamageFeedback() {
+    this.damageTween?.stop();
+    this.player.setAlpha(1);
+    this.cameras.main.shake(120, 0.006);
+    this.damageTween = this.tweens.add({
+      targets: this.player,
+      alpha: 0.25,
+      duration: 90,
+      yoyo: true,
+      repeat: 5,
+      onComplete: () => this.player.setAlpha(1),
+    });
   }
 
   private endGame() {
     if (this.ended) return;
     this.ended = true;
+    this.damageTween?.stop();
+    this.player.setAlpha(1);
     this.physics.pause();
     this.monsterTimer?.remove(false);
     this.foodTimer?.remove(false);
-    showMenu(`GAME OVER - SCORE: ${this.score} - KILLED: ${this.killed}`, false, true);
+    showMenu(t('gameOver', { score: this.score, killed: this.killed }), false, true);
   }
 
   private restart = () => {
@@ -272,15 +358,23 @@ export class GameScene extends Phaser.Scene {
 
   private togglePause() {
     if (this.ended) return;
-    this.paused = !this.paused;
-    if (this.paused) {
+    this.setGamePaused(!this.paused);
+  }
+
+  private setGamePaused(paused: boolean) {
+    this.paused = paused;
+    if (paused) {
       this.physics.pause();
-      this.monsterTimer?.pause();
-      this.foodTimer?.pause();
+      if (this.monsterTimer) this.monsterTimer.paused = true;
+      if (this.foodTimer) this.foodTimer.paused = true;
+      this.tweens.pauseAll();
+      this.anims.pauseAll();
     } else {
       this.physics.resume();
-      this.monsterTimer?.resume();
-      this.foodTimer?.resume();
+      if (this.monsterTimer) this.monsterTimer.paused = false;
+      if (this.foodTimer) this.foodTimer.paused = false;
+      this.tweens.resumeAll();
+      this.anims.resumeAll();
     }
   }
 }
