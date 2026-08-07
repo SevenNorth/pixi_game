@@ -25,6 +25,8 @@ let skillDock: HTMLElement;
 let activeSkillSlots: HTMLElement[];
 let passiveSkillSlots: HTMLElement[];
 let levelUpTimer: number | undefined;
+let noticeActive = false;
+const noticeQueue: Array<{ kicker: string; title: string }> = [];
 
 export function initDomHud(container: HTMLElement) {
   root = container;
@@ -138,16 +140,47 @@ export function hideMenu() {
 }
 
 export function showLevelUp(levelNumber: number, levelsGained: number) {
-  window.clearTimeout(levelUpTimer);
-  levelUp.hidden = false;
-  (root.querySelector('#level-up-title') as HTMLElement).textContent =
-    `${t('level', { level: levelNumber })} · ${t('maxHpAdded', { amount: levelsGained })}`;
-  levelUpTimer = window.setTimeout(hideLevelUp, 1800);
+  enqueueNotice(
+    t('levelUp'),
+    `${t('level', { level: levelNumber })} · ${t('maxHpAdded', { amount: levelsGained })}`,
+  );
+}
+
+export function showBossAppeared(levelNumber: number) {
+  enqueueNotice(t('bossAppeared'), t('bossChallenge', { level: levelNumber }));
+}
+
+export function showMapLevelUp(levelNumber: number) {
+  enqueueNotice(t('mapLevelUp'), t('mapLevelReached', { level: levelNumber }));
 }
 
 export function hideLevelUp() {
   window.clearTimeout(levelUpTimer);
+  noticeQueue.length = 0;
+  noticeActive = false;
   levelUp.hidden = true;
+}
+
+function enqueueNotice(kicker: string, title: string) {
+  noticeQueue.push({ kicker, title });
+  showNextNotice();
+}
+
+function showNextNotice() {
+  if (noticeActive) return;
+  const notice = noticeQueue.shift();
+  if (!notice) return;
+  noticeActive = true;
+  (root.querySelector('.level-up-kicker') as HTMLElement).textContent = notice.kicker;
+  (root.querySelector('#level-up-title') as HTMLElement).textContent = notice.title;
+  levelUp.hidden = true;
+  void levelUp.offsetWidth;
+  levelUp.hidden = false;
+  levelUpTimer = window.setTimeout(() => {
+    levelUp.hidden = true;
+    noticeActive = false;
+    showNextNotice();
+  }, 1800);
 }
 
 export function showHud() {

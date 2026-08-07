@@ -48,6 +48,12 @@ export class MapProgression {
     return true;
   }
 
+  failBoss() {
+    if (this.state.status !== 'boss-active') return false;
+    this.state.status = 'boss-ready';
+    return true;
+  }
+
   private addExperience(amount: number) {
     const previous = this.state.experience;
     this.state.experience = Math.min(

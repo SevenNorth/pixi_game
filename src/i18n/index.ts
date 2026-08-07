@@ -24,6 +24,10 @@ const messages = {
     passiveCooldownReduction: '冷却缩减',
     levelUp: '升级！',
     maxHpAdded: '最大生命值 +{amount}',
+    bossAppeared: 'Boss 出现！',
+    bossChallenge: '地图等级 {level} 挑战开始',
+    mapLevelUp: '地图升级！',
+    mapLevelReached: '已进入地图等级 {level}',
     gameOver: '游戏结束｜击杀：{killed}',
   },
   en: {
@@ -51,6 +55,10 @@ const messages = {
     passiveCooldownReduction: 'Cooldown Reduction',
     levelUp: 'LEVEL UP!',
     maxHpAdded: 'MAX HP +{amount}',
+    bossAppeared: 'BOSS APPEARED!',
+    bossChallenge: 'MAP LEVEL {level} CHALLENGE',
+    mapLevelUp: 'MAP LEVEL UP!',
+    mapLevelReached: 'MAP LEVEL {level} REACHED',
     gameOver: 'GAME OVER | KILLED: {killed}',
   },
 } as const;

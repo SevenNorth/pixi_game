@@ -1,5 +1,6 @@
 import { getEnemyDefinition } from '../content/enemies/enemyDefinitions';
 import type { EnemyKind, EnemySkillKind } from '../content/enemies/enemyDefinitions';
+import { getMonsterLevelModifiers } from './MonsterLevelScaling';
 
 export type MonsterAggroState = 'idle' | 'chasing' | 'returning';
 
@@ -46,17 +47,20 @@ export function createMonsterCombatState(
 ): MonsterCombatState {
   const normalizedLevel = Math.max(1, Math.floor(level));
   const definition = getEnemyDefinition(kind);
-  const maxHp = kind === 'normal'
-    ? definition.maxHp + Math.max(0, normalizedLevel - 1)
-    : definition.maxHp + Math.max(0, normalizedLevel - 1) * (kind === 'boss' ? 8 : 3);
+  const modifiers = getMonsterLevelModifiers(normalizedLevel);
+  const maxHp = Math.max(1, Math.round(definition.maxHp * modifiers.hpMultiplier));
   return {
     level: normalizedLevel,
     hp: maxHp,
     maxHp,
-    contactDamage: definition.contactDamage,
-    projectileDamage: definition.projectileDamage,
-    skillDamage: definition.skillDamage,
-    speed: definition.speed,
+    contactDamage: definition.contactDamage + modifiers.damageBonus,
+    projectileDamage: definition.projectileDamage > 0
+      ? definition.projectileDamage + modifiers.damageBonus
+      : 0,
+    skillDamage: definition.skillDamage > 0
+      ? definition.skillDamage + modifiers.damageBonus
+      : 0,
+    speed: definition.speed * modifiers.speedMultiplier,
     experience: definition.experience * normalizedLevel,
     aggro: 'idle',
     homeX,

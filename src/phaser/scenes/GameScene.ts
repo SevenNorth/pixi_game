@@ -12,6 +12,11 @@ import type { FoodKey } from '../../game/simulation/FoodRecovery';
 import { InfiniteWorldSystem } from '../../game/simulation/InfiniteWorld';
 import type { WorldChunkState, WorldObstacleState } from '../../game/simulation/InfiniteWorld';
 import { MapProgression } from '../../game/simulation/MapProgression';
+import { rollMonsterLevel } from '../../game/simulation/MonsterLevelScaling';
+import {
+  canSpawnMinion,
+  rollMinionKind,
+} from '../../game/simulation/MonsterSpawnDirector';
 import {
   applyMonsterDamage,
   createMonsterCombatState,
@@ -31,6 +36,7 @@ import {
 import type { CardinalDirection, PlayerDirectionState } from '../../game/simulation/PlayerMovement';
 import { PlayerPassiveSystem } from '../../game/simulation/PlayerPassiveSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
+import { getRewardProfile, scalePlayerExperience } from '../../game/simulation/RewardScaling';
 import { PlayerSkillSystem } from '../../game/simulation/PlayerSkillSystem';
 import type { PlayerSkillRuntimeEvent } from '../../game/simulation/PlayerSkillSystem';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
@@ -48,7 +54,9 @@ import {
   hideLevelUp,
   hideMenu,
   showHud,
+  showBossAppeared,
   showLevelUp,
+  showMapLevelUp,
   showMenu,
   updateHud,
   updateMapProgression,
@@ -78,6 +86,7 @@ import { ensureObstacleTexture } from '../view/world/createObstacleTexture';
 
 const BULLET_SPEED = 420;
 const WORLD_RUNTIME_HALF_EXTENT = 1_000_000_000;
+const MINION_RECYCLE_DISTANCE = 1600;
 
 interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   monsterId: string;
@@ -129,12 +138,15 @@ export class GameScene extends Phaser.Scene {
   private obstacleSprites = new Map<string, ObstacleSprite>();
   private appliedPassiveMaxShieldBonus = 0;
   private damageTween?: Phaser.Tweens.Tween;
+  private preserveMapProgressionOnRestart = false;
 
   constructor() {
     super('GameScene');
   }
 
-  create() {
+  create(data: { preserveMapProgression?: boolean } = {}) {
+    const preserveMapProgression = data.preserveMapProgression === true;
+    this.preserveMapProgressionOnRestart = false;
     this.ended = false;
     this.paused = false;
     this.killed = 0;
@@ -146,7 +158,7 @@ export class GameScene extends Phaser.Scene {
     this.playerSkills.reset(this.gameplayTime);
     this.playerPassives.reset();
     this.world.reset();
-    this.mapProgression.reset();
+    if (!preserveMapProgression) this.mapProgression.reset();
     this.obstacleSprites.clear();
     this.appliedPassiveMaxShieldBonus = 0;
     this.playerAttack = attackForLevel(this.progression.state.level);
@@ -535,8 +547,13 @@ export class GameScene extends Phaser.Scene {
 
   private spawnMonster() {
     if (this.ended) return;
-    const point = this.getSpawnPoint(450);
+    this.recycleDistantMinions();
     const kind = this.getNextEnemyKind();
+    if (
+      kind !== 'boss' &&
+      !canSpawnMinion(this.mapProgression.state.level, this.countActiveMinions())
+    ) return;
+    const point = this.getSpawnPoint(450);
     if (kind === 'boss') {
       if (!this.mapProgression.markBossSpawned()) return;
       this.updateMapProgressionHud();
@@ -551,7 +568,9 @@ export class GameScene extends Phaser.Scene {
       0,
     ) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
-    const monsterLevel = kind === 'boss' ? this.mapProgression.state.level : 1;
+    const monsterLevel = kind === 'boss'
+      ? this.mapProgression.state.level
+      : rollMonsterLevel(this.mapProgression.state.level, Phaser.Math.RND.frac());
     monster.combat = createMonsterCombatState(
       monsterLevel,
       point.x,
@@ -586,6 +605,7 @@ export class GameScene extends Phaser.Scene {
       monster.setData('bossVisual', bossVisual!.id);
     }
     this.monsters.add(monster);
+    if (kind === 'boss') showBossAppeared(monsterLevel);
   }
 
   private getNextEnemyKind(): EnemyKind {
@@ -593,12 +613,36 @@ export class GameScene extends Phaser.Scene {
       this.mapProgression.state.status === 'boss-ready' &&
       !this.hasActiveBoss()
     ) return 'boss';
-    if (
-      this.mapProgression.state.level >= 2 &&
-      this.monsterId > 0 &&
-      this.monsterId % 3 === 0
-    ) return 'elite';
-    return 'normal';
+    return rollMinionKind(this.mapProgression.state.level, Phaser.Math.RND.frac());
+  }
+
+  private countActiveMinions() {
+    return this.monsters.children.entries.reduce((count, child) => {
+      const monster = child as MonsterSprite;
+      return count + Number(
+        monster.active &&
+        monster.combat.kind !== 'boss' &&
+        !monster.getData('defeated'),
+      );
+    }, 0);
+  }
+
+  private recycleDistantMinions() {
+    const distantMinions = this.monsters.children.entries.filter(child => {
+      const monster = child as MonsterSprite;
+      return (
+        monster.active &&
+        monster.combat.kind !== 'boss' &&
+        !monster.getData('defeated') &&
+        Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y)
+          > MINION_RECYCLE_DISTANCE
+      );
+    }) as MonsterSprite[];
+    distantMinions.forEach(monster => {
+      monster.warningView?.destroy();
+      monster.healthBar.destroy();
+      monster.destroy();
+    });
   }
 
   private hasActiveBoss() {
@@ -909,13 +953,23 @@ export class GameScene extends Phaser.Scene {
     monster.healthBar.destroy();
     playMonsterDefeat(this, monster);
     this.killed += 1;
+    const rewardProfile = getRewardProfile(
+      this.progression.state.level,
+      this.mapProgression.state.level,
+    );
     if (monster.combat.kind === 'boss') {
-      this.mapProgression.completeBoss();
+      if (this.mapProgression.completeBoss()) {
+        showMapLevelUp(this.mapProgression.state.level);
+      }
     } else {
       this.mapProgression.gainKillExperience(monster.combat.level);
     }
     this.updateMapProgressionHud();
-    const experienceResult = this.progression.gainExperience(monster.combat.experience);
+    const playerExperience = scalePlayerExperience(
+      monster.combat.experience,
+      rewardProfile.playerExperienceMultiplier,
+    );
+    const experienceResult = this.progression.gainExperience(playerExperience);
     updateHud(this.killed);
     updateProgression(
       this.progression.state.level,
@@ -1042,12 +1096,16 @@ export class GameScene extends Phaser.Scene {
     this.physics.pause();
     this.monsterTimer?.remove(false);
     this.foodTimer?.remove(false);
+    this.preserveMapProgressionOnRestart = this.mapProgression.failBoss();
+    if (this.preserveMapProgressionOnRestart) this.updateMapProgressionHud();
     showMenu(t('gameOver', { killed: this.killed }), false, true);
   }
 
   private restart = () => {
     if (!this.ended) return;
-    this.scene.restart();
+    this.scene.restart({
+      preserveMapProgression: this.preserveMapProgressionOnRestart,
+    });
   };
 
   private togglePause() {
