@@ -133,6 +133,151 @@ body {
   text-align: right;
 }
 
+.skill-dock {
+  position: fixed;
+  z-index: 10;
+  right: 16px;
+  bottom: 16px;
+  display: grid;
+  justify-items: end;
+  gap: 7px;
+  color: #f4ffff;
+  font: 700 12px/1 "Trebuchet MS", Arial, sans-serif;
+  pointer-events: none;
+}
+
+.active-skill-slots,
+.passive-skill-slots {
+  display: flex;
+  align-items: end;
+  gap: 7px;
+}
+
+.active-skill-slot {
+  position: relative;
+  width: 70px;
+  height: 70px;
+  overflow: hidden;
+  border: 1px solid rgba(111, 219, 255, 0.72);
+  border-radius: 5px;
+  background: rgba(12, 28, 36, 0.84);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.active-skill-slot[data-empty="true"] {
+  border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.active-skill-slot[data-phase="windup"] {
+  border-color: #f8eb75;
+  box-shadow: 0 0 8px rgba(248, 235, 117, 0.65);
+}
+
+.skill-cooldown-mask {
+  position: absolute;
+  z-index: 1;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  background: rgba(4, 12, 18, 0.72);
+}
+
+.skill-icon {
+  position: absolute;
+  top: 7px;
+  left: 8px;
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  color: #bdefff;
+  font: 700 27px/1 "Segoe UI Symbol", sans-serif;
+}
+
+.active-skill-slot[data-skill="lightning-bolt"] .skill-icon::before {
+  content: "\26A1";
+}
+
+.active-skill-slot[data-skill="thunder-dash"] .skill-icon::before {
+  content: "\27A4";
+}
+
+.active-skill-slot[data-skill="storm-shield"] .skill-icon::before {
+  content: "";
+  width: 22px;
+  height: 25px;
+  background: currentColor;
+  clip-path: polygon(50% 0, 91% 15%, 84% 57%, 72% 79%, 50% 100%, 28% 79%, 16% 57%, 9% 15%);
+}
+
+.skill-level,
+.skill-shortcut,
+.skill-cooldown {
+  position: absolute;
+  z-index: 2;
+}
+
+.skill-level {
+  top: 7px;
+  right: 5px;
+  color: #f8eb75;
+  font-size: 10px;
+}
+
+.skill-shortcut {
+  bottom: 7px;
+  left: 6px;
+  padding: 2px 4px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.28);
+  font-size: 9px;
+}
+
+.skill-cooldown {
+  top: 25px;
+  right: 8px;
+  color: #ffffff;
+  font-size: 15px;
+  text-shadow: 1px 1px 0 #10232c;
+}
+
+.passive-skill-slot {
+  position: relative;
+  width: 28px;
+  height: 28px;
+  border: 1px solid rgba(248, 235, 117, 0.52);
+  border-radius: 4px;
+  background: rgba(12, 28, 36, 0.8);
+}
+
+.passive-skill-slot[data-empty="true"] {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.passive-skill-icon {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #f8eb75;
+  font-size: 9px;
+}
+
+.passive-skill-slot[data-passive="attack-boost"] .passive-skill-icon::before { content: "ATK"; }
+.passive-skill-slot[data-passive="shield-capacity"] .passive-skill-icon::before { content: "SHD"; }
+.passive-skill-slot[data-passive="move-speed"] .passive-skill-icon::before { content: ">>"; }
+.passive-skill-slot[data-passive="cooldown-reduction"] .passive-skill-icon::before { content: "CD"; }
+
+.passive-skill-level {
+  position: absolute;
+  right: 2px;
+  bottom: 1px;
+  color: #ffffff;
+  font-size: 9px;
+}
+
 .level-up {
   position: fixed;
   z-index: 30;
@@ -239,5 +384,15 @@ body {
     width: 16px;
     height: 16px;
     font-size: 16px;
+  }
+
+  .skill-dock {
+    right: 8px;
+    bottom: 8px;
+  }
+
+  .active-skill-slot {
+    width: 60px;
+    height: 64px;
   }
 }

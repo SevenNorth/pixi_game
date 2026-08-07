@@ -92,6 +92,17 @@ export function getSkillTimeUntilReady(
   return remainingCurrentPhase + remainingAfterCurrent[state.phase];
 }
 
+export function startSkillCooldown(
+  definition: SkillDefinition,
+  state: SkillRuntimeState,
+  now: number,
+) {
+  assertMatchingSkill(definition, state);
+  const events: SkillRuntimeEvent[] = [];
+  enterPhase(definition, state, 'cooldown', now, events);
+  return events;
+}
+
 function settleImmediatePhases(
   definition: SkillDefinition,
   state: SkillRuntimeState,

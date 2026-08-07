@@ -1,5 +1,11 @@
 export type Faction = 'player' | 'enemy';
 
+export interface ProjectileSplashImpact {
+  type: 'splash';
+  radius: number;
+  damageMultiplier: number;
+}
+
 export interface ProjectileState {
   id: string;
   ownerId: string;
@@ -9,6 +15,7 @@ export interface ProjectileState {
   velocityY: number;
   remainingDistance: number;
   collisionEnabledAt: number;
+  impact?: ProjectileSplashImpact;
 }
 
 export type ProjectileConfig = ProjectileState;

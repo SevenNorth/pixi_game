@@ -5,8 +5,30 @@ import {
 } from '../../../game/simulation/ProjectileSystem';
 import type { Faction, ProjectileState } from '../../../game/simulation/ProjectileSystem';
 
-export const PROJECTILE_VISUAL_LENGTH = 64;
-const PROJECTILE_THICKNESS = 20;
+export type ProjectileVisualStyle = 'basic-lightning' | 'skill-lightning';
+
+const PROJECTILE_STYLES = {
+  'basic-lightning': {
+    length: 64,
+    thickness: 20,
+    segments: 6,
+    jitter: 7,
+    widths: [7, 4, 2] as const,
+    colors: [0x1677ff, 0x4ebcff, 0xf4ffff] as const,
+    alphas: [0.42, 0.9, 1] as const,
+  },
+  'skill-lightning': {
+    length: 88,
+    thickness: 34,
+    segments: 8,
+    jitter: 10,
+    widths: [13, 8, 3] as const,
+    colors: [0x1b9cff, 0x65e7ff, 0xffffff] as const,
+    alphas: [0.5, 0.96, 1] as const,
+  },
+} as const;
+
+export const PROJECTILE_VISUAL_LENGTH = PROJECTILE_STYLES['basic-lightning'].length;
 
 export interface ProjectileView extends Phaser.GameObjects.Zone {
   lightning: Phaser.GameObjects.Graphics;
@@ -15,6 +37,11 @@ export interface ProjectileView extends Phaser.GameObjects.Zone {
   directionY: number;
   flickerElapsed: number;
   launched: boolean;
+  visualStyle: ProjectileVisualStyle;
+}
+
+export function getProjectileVisualLength(style: ProjectileVisualStyle) {
+  return PROJECTILE_STYLES[style].length;
 }
 
 export function createProjectileView(
@@ -23,13 +50,15 @@ export function createProjectileView(
   projectile: ProjectileState,
   x: number,
   y: number,
+  visualStyle: ProjectileVisualStyle = 'basic-lightning',
 ) {
   const speed = Math.hypot(projectile.velocityX, projectile.velocityY);
   const direction = speed > 0
     ? { x: projectile.velocityX / speed, y: projectile.velocityY / speed }
     : { x: 0, y: 1 };
-  const bodyWidth = Math.abs(direction.x) * PROJECTILE_VISUAL_LENGTH + PROJECTILE_THICKNESS;
-  const bodyHeight = Math.abs(direction.y) * PROJECTILE_VISUAL_LENGTH + PROJECTILE_THICKNESS;
+  const style = PROJECTILE_STYLES[visualStyle];
+  const bodyWidth = Math.abs(direction.x) * style.length + style.thickness;
+  const bodyHeight = Math.abs(direction.y) * style.length + style.thickness;
   const lightning = scene.add.graphics();
   const view = scene.add.zone(x, y, bodyWidth, bodyHeight) as ProjectileView;
   scene.physics.add.existing(view);
@@ -41,8 +70,10 @@ export function createProjectileView(
   view.directionY = direction.y;
   view.flickerElapsed = 0;
   view.launched = false;
+  view.visualStyle = visualStyle;
   view.setData('projectileId', projectile.id);
   lightning.setPosition(view.x, view.y).setDepth(1);
+  if (visualStyle === 'skill-lightning') lightning.setBlendMode(Phaser.BlendModes.ADD);
   view.once(Phaser.GameObjects.Events.DESTROY, () => lightning.destroy());
 
   const body = view.body as Phaser.Physics.Arcade.Body;
@@ -76,34 +107,41 @@ export function syncProjectileVisual(view: ProjectileView) {
 
 function drawLightning(view: ProjectileView) {
   const { lightning, directionX, directionY } = view;
+  const style = PROJECTILE_STYLES[view.visualStyle];
   const perpendicularX = -directionY;
   const perpendicularY = directionX;
   const points: Phaser.Math.Vector2[] = [
     new Phaser.Math.Vector2(
-      -directionX * PROJECTILE_VISUAL_LENGTH / 2,
-      -directionY * PROJECTILE_VISUAL_LENGTH / 2,
+      -directionX * style.length / 2,
+      -directionY * style.length / 2,
     ),
   ];
-  const segments = 6;
+  const segments = style.segments;
   for (let index = 1; index < segments; index += 1) {
-    const distance = -PROJECTILE_VISUAL_LENGTH / 2
-      + (PROJECTILE_VISUAL_LENGTH / segments) * index;
-    const jitter = Phaser.Math.Between(-7, 7);
+    const distance = -style.length / 2 + (style.length / segments) * index;
+    const jitter = Phaser.Math.Between(-style.jitter, style.jitter);
     points.push(new Phaser.Math.Vector2(
       directionX * distance + perpendicularX * jitter,
       directionY * distance + perpendicularY * jitter,
     ));
   }
   points.push(new Phaser.Math.Vector2(
-    directionX * PROJECTILE_VISUAL_LENGTH / 2,
-    directionY * PROJECTILE_VISUAL_LENGTH / 2,
+    directionX * style.length / 2,
+    directionY * style.length / 2,
   ));
 
   lightning.clear();
+  if (view.visualStyle === 'skill-lightning') {
+    strokeLightning(lightning, points, style.widths[0], style.colors[0], style.alphas[0]);
+    strokeLightning(lightning, points, style.widths[1], style.colors[1], style.alphas[1]);
+    strokeLightning(lightning, points, style.widths[2], style.colors[2], style.alphas[2]);
+    return;
+  }
+
   const colors = getFactionColors(view.projectile.faction);
-  strokeLightning(lightning, points, 7, colors.outer, 0.42);
-  strokeLightning(lightning, points, 4, colors.middle, 0.9);
-  strokeLightning(lightning, points, 2, 0xf4ffff, 1);
+  strokeLightning(lightning, points, style.widths[0], colors.outer, style.alphas[0]);
+  strokeLightning(lightning, points, style.widths[1], colors.middle, style.alphas[1]);
+  strokeLightning(lightning, points, style.widths[2], style.colors[2], style.alphas[2]);
 }
 
 function getFactionColors(faction: Faction) {

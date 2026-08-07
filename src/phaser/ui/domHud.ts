@@ -1,5 +1,10 @@
 import { foodKeys } from '../assets/manifest';
 import { t } from '../../i18n';
+import type { MessageKey } from '../../i18n';
+import type { PassiveSkillId } from '../../game/content/skills/passiveSkillDefinitions';
+import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinitions';
+import type { PassiveSkillSlot } from '../../game/simulation/PlayerPassiveSystem';
+import type { PlayerSkillSlotState } from '../../game/simulation/PlayerSkillSystem';
 
 let root: HTMLElement;
 let hud: HTMLElement;
@@ -12,6 +17,9 @@ let level: HTMLElement;
 let experienceBar: HTMLElement;
 let experienceLabel: HTMLElement;
 let levelUp: HTMLElement;
+let skillDock: HTMLElement;
+let activeSkillSlots: HTMLElement[];
+let passiveSkillSlots: HTMLElement[];
 let levelUpTimer: number | undefined;
 
 export function initDomHud(container: HTMLElement) {
@@ -50,6 +58,27 @@ export function initDomHud(container: HTMLElement) {
         <div id="level-up-title" class="level-up-title">${t('maxHpAdded', { amount: 1 })}</div>
       </div>
     </div>
+    <div id="skill-dock" class="skill-dock" hidden>
+      <div id="passive-skill-slots" class="passive-skill-slots" aria-label="Passive skills">
+        ${Array.from({ length: 4 }, () => `
+          <div class="passive-skill-slot" data-empty="true">
+            <span class="passive-skill-icon"></span>
+            <span class="passive-skill-level"></span>
+          </div>
+        `).join('')}
+      </div>
+      <div id="active-skill-slots" class="active-skill-slots">
+        ${['J/1', 'K/2', 'L/3'].map(shortcut => `
+          <div class="active-skill-slot" data-empty="true" data-phase="ready">
+            <span class="skill-cooldown-mask"></span>
+            <span class="skill-icon"></span>
+            <span class="skill-level"></span>
+            <span class="skill-shortcut">${shortcut}</span>
+            <span class="skill-cooldown"></span>
+          </div>
+        `).join('')}
+      </div>
+    </div>
   `);
   hud = root.querySelector('.hud') as HTMLElement;
   menu = root.querySelector('#game-menu') as HTMLElement;
@@ -61,6 +90,9 @@ export function initDomHud(container: HTMLElement) {
   experienceBar = root.querySelector('#experience-bar') as HTMLElement;
   experienceLabel = root.querySelector('#experience-label') as HTMLElement;
   levelUp = root.querySelector('#level-up') as HTMLElement;
+  skillDock = root.querySelector('#skill-dock') as HTMLElement;
+  activeSkillSlots = Array.from(root.querySelectorAll('.active-skill-slot'));
+  passiveSkillSlots = Array.from(root.querySelectorAll('.passive-skill-slot'));
   const startButton = root.querySelector('#start-game') as HTMLButtonElement;
   const restartButton = root.querySelector('#restart-game') as HTMLButtonElement;
   startButton.style.backgroundImage = `url(${getAssetUrl('start')})`;
@@ -105,10 +137,12 @@ export function hideLevelUp() {
 
 export function showHud() {
   hud.hidden = false;
+  skillDock.hidden = false;
 }
 
 export function hideHud() {
   hud.hidden = true;
+  skillDock.hidden = true;
 }
 
 export function updateHud(nextKilled: number) {
@@ -125,6 +159,58 @@ export function updateProgression(levelNumber: number, experience: number, exper
   const progress = experienceToNext > 0 ? Math.min(1, experience / experienceToNext) : 1;
   experienceBar.style.width = `${progress * 100}%`;
   experienceLabel.textContent = t('experienceValue', { experience, next: experienceToNext });
+}
+
+const playerSkillNameKeys: Record<PlayerSkillId, MessageKey> = {
+  'lightning-bolt': 'lightningBolt',
+  'thunder-dash': 'thunderDash',
+  'storm-shield': 'stormShield',
+};
+
+const passiveSkillNameKeys: Record<PassiveSkillId, MessageKey> = {
+  'attack-boost': 'passiveAttackBoost',
+  'shield-capacity': 'passiveShieldCapacity',
+  'move-speed': 'passiveMoveSpeed',
+  'cooldown-reduction': 'passiveCooldownReduction',
+};
+
+export function updateSkillSlots(slots: Array<PlayerSkillSlotState | null>) {
+  activeSkillSlots.forEach((element, index) => {
+    const slot = slots[index] ?? null;
+    const level = element.querySelector('.skill-level') as HTMLElement;
+    const cooldown = element.querySelector('.skill-cooldown') as HTMLElement;
+    const mask = element.querySelector('.skill-cooldown-mask') as HTMLElement;
+    element.dataset.empty = String(!slot);
+    element.dataset.skill = slot?.id ?? '';
+    element.dataset.phase = slot?.phase ?? 'ready';
+    level.textContent = slot ? `Lv.${slot.level}` : '';
+    const ratio = slot?.phase === 'cooldown' && slot.cooldownMs > 0
+      ? Math.min(1, slot.remainingMs / slot.cooldownMs)
+      : 0;
+    mask.style.height = `${ratio * 100}%`;
+    cooldown.textContent = slot?.phase === 'cooldown' && slot.remainingMs > 0
+      ? (slot.remainingMs / 1000).toFixed(1)
+      : '';
+    element.title = slot ? t(playerSkillNameKeys[slot.id]) : t('emptySkill');
+    element.setAttribute(
+      'aria-label',
+      slot ? `${t(playerSkillNameKeys[slot.id])} Lv.${slot.level}` : t('emptySkill'),
+    );
+  });
+}
+
+export function updatePassiveSkills(slots: Array<PassiveSkillSlot | null>) {
+  passiveSkillSlots.forEach((element, index) => {
+    const slot = slots[index] ?? null;
+    const level = element.querySelector('.passive-skill-level') as HTMLElement;
+    element.dataset.empty = String(!slot);
+    element.dataset.passive = slot?.id ?? '';
+    level.textContent = slot ? String(slot.level) : '';
+    element.setAttribute(
+      'aria-label',
+      slot ? `${t(passiveSkillNameKeys[slot.id])} Lv.${slot.level}` : t('emptySkill'),
+    );
+  });
 }
 
 function renderPips(container: HTMLElement, value: number, max: number, type: 'hp' | 'shield') {

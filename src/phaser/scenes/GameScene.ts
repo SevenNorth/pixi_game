@@ -1,4 +1,10 @@
 import Phaser from 'phaser';
+import {
+  getPlayerSkillDefinition,
+  getShieldPoints,
+  playerSkillDefinitions,
+} from '../../game/content/skills/playerSkillDefinitions';
+import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinitions';
 import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
 import type { FoodKey } from '../../game/simulation/FoodRecovery';
 import {
@@ -18,9 +24,13 @@ import {
   updatePlayerDirection,
 } from '../../game/simulation/PlayerMovement';
 import type { CardinalDirection, PlayerDirectionState } from '../../game/simulation/PlayerMovement';
+import { PlayerPassiveSystem } from '../../game/simulation/PlayerPassiveSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
+import { PlayerSkillSystem } from '../../game/simulation/PlayerSkillSystem';
+import type { PlayerSkillRuntimeEvent } from '../../game/simulation/PlayerSkillSystem';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
 import { PlayerVitals } from '../../game/simulation/PlayerVitals';
+import { resolveSkillTarget } from '../../game/simulation/SkillTargeting';
 import {
   canProjectileHit,
   createProjectileState,
@@ -36,18 +46,25 @@ import {
   showLevelUp,
   showMenu,
   updateHud,
+  updatePassiveSkills,
   updateProgression,
+  updateSkillSlots,
   updateVitals,
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
 import {
+  playLightningSkillCast,
+  playLightningSkillImpact,
+} from '../view/fx/playLightningSkillFx';
+import {
   createProjectileView,
+  getProjectileVisualLength,
   PROJECTILE_VISUAL_LENGTH,
   syncProjectileVisual,
   updateProjectileView,
 } from '../view/projectiles/ProjectileView';
-import type { ProjectileView } from '../view/projectiles/ProjectileView';
+import type { ProjectileView, ProjectileVisualStyle } from '../view/projectiles/ProjectileView';
 
 const BULLET_SPEED = 420;
 
@@ -84,6 +101,9 @@ export class GameScene extends Phaser.Scene {
   private playerDirection: PlayerDirectionState = createPlayerDirectionState();
   private vitals = new PlayerVitals();
   private progression = new PlayerProgression();
+  private playerSkills = new PlayerSkillSystem();
+  private playerPassives = new PlayerPassiveSystem();
+  private appliedPassiveMaxShieldBonus = 0;
   private damageTween?: Phaser.Tweens.Tween;
 
   constructor() {
@@ -99,6 +119,9 @@ export class GameScene extends Phaser.Scene {
     this.playerDirection = createPlayerDirectionState();
     this.vitals.reset();
     this.progression.reset();
+    this.playerSkills.reset(this.gameplayTime);
+    this.playerPassives.reset();
+    this.appliedPassiveMaxShieldBonus = 0;
     this.playerAttack = attackForLevel(this.progression.state.level);
     hideMenu();
     hideLevelUp();
@@ -116,6 +139,8 @@ export class GameScene extends Phaser.Scene {
       this.progression.state.experience,
       this.progression.state.experienceToNext,
     );
+    updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
+    updatePassiveSkills(this.playerPassives.slots);
 
     this.physics.world.setBounds(-4000, -4000, 8000, 8000);
     this.inputController = new PhaserInputController(this.input.keyboard!);
@@ -155,7 +180,21 @@ export class GameScene extends Phaser.Scene {
     if (inputFrame.restartPressed) this.restart();
     if (this.ended || this.paused) return;
     this.gameplayTime += Math.min(delta, 50);
-    const speed = 180;
+    const passiveModifiers = this.playerPassives.getModifiers();
+    if (passiveModifiers.maxShieldBonus !== this.appliedPassiveMaxShieldBonus) {
+      this.vitals.adjustMaxShield(
+        passiveModifiers.maxShieldBonus - this.appliedPassiveMaxShieldBonus,
+      );
+      this.appliedPassiveMaxShieldBonus = passiveModifiers.maxShieldBonus;
+      updateVitals(
+        this.vitals.state.hp,
+        this.vitals.state.maxHp,
+        this.vitals.state.shield,
+        this.vitals.state.maxShield,
+      );
+    }
+    this.playerSkills.setCooldownMultiplier(passiveModifiers.cooldownMultiplier);
+    const speed = 180 * passiveModifiers.moveSpeedMultiplier;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     const { horizontal, vertical } = inputFrame;
     updatePlayerDirection(this.playerDirection, horizontal, vertical);
@@ -169,6 +208,16 @@ export class GameScene extends Phaser.Scene {
       this.player.anims.pause();
     }
     if (inputFrame.basicAttackHeld) this.handleShoot();
+    (Object.entries(inputFrame.skillPressed) as Array<
+      [keyof typeof inputFrame.skillPressed, boolean]
+    >).forEach(([action, pressed]) => {
+      if (!pressed) return;
+      const activation = this.playerSkills.requestAction(action, this.gameplayTime);
+      this.handlePlayerSkillEvents(activation.events);
+    });
+    this.handlePlayerSkillEvents(this.playerSkills.update(this.gameplayTime));
+    this.updatePlayerSkillPresentation();
+    updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
     this.monsters.children.each(child => {
       const monster = child as MonsterSprite;
       if (monster.getData('defeated')) return null;
@@ -267,13 +316,129 @@ export class GameScene extends Phaser.Scene {
     this.shoot();
   }
 
+  private handlePlayerSkillEvents(events: PlayerSkillRuntimeEvent[]) {
+    events.forEach(({ skillId, event }) => {
+      if (event.type === 'released') this.releasePlayerSkill(skillId);
+    });
+  }
+
+  private releasePlayerSkill(skillId: PlayerSkillId) {
+    const learned = this.playerSkills.getLearnedSkill(skillId);
+    if (!learned) return;
+    const definition = getPlayerSkillDefinition(
+      skillId,
+      learned.level,
+      this.playerPassives.getModifiers().cooldownMultiplier,
+    );
+    const target = resolveSkillTarget(definition.targeting, {
+      origin: { x: this.player.x, y: this.player.y },
+      facing: this.playerDirection.facingVector,
+      movement: this.playerDirection.movementVector,
+      range: definition.range,
+      candidates: this.monsters.children.entries.map(child => {
+        const monster = child as MonsterSprite;
+        return {
+          id: monster.monsterId,
+          x: monster.x,
+          y: monster.y,
+          active: monster.active && !monster.getData('defeated'),
+        };
+      }),
+    });
+    if (!target) return;
+
+    const effect = playerSkillDefinitions[skillId].effect;
+    if (effect.type === 'projectile') {
+      const passiveAttack = this.playerPassives.getModifiers().attackBonus;
+      const damage = Math.round(
+        (this.playerAttack + passiveAttack) * definition.damageMultiplier
+          + definition.fixedDamage,
+      );
+      const projectile = createProjectileState({
+        id: `projectile-${this.bulletId++}`,
+        ownerId: 'player',
+        faction: 'player',
+        damage,
+        velocityX: target.direction.x * effect.speed,
+        velocityY: target.direction.y * effect.speed,
+        remainingDistance: definition.range,
+        collisionEnabledAt: this.gameplayTime + 30,
+        impact: {
+          type: 'splash',
+          radius: effect.splashRadius,
+          damageMultiplier: effect.splashDamageMultiplier,
+        },
+      });
+      const visualStyle: ProjectileVisualStyle = 'skill-lightning';
+      const visualLength = getProjectileVisualLength(visualStyle);
+      playLightningSkillCast(this, this.player.x, this.player.y, target.direction);
+      this.spawnProjectile(
+        projectile,
+        this.player.x + target.direction.x * (24 + visualLength / 2),
+        this.player.y + target.direction.y * (24 + visualLength / 2),
+        visualStyle,
+      );
+      return;
+    }
+
+    if (effect.type === 'dash') {
+      const bounds = this.physics.world.bounds;
+      const destinationX = Phaser.Math.Clamp(target.point.x, bounds.left + 24, bounds.right - 24);
+      const destinationY = Phaser.Math.Clamp(target.point.y, bounds.top + 24, bounds.bottom - 24);
+      this.playDashTrail(this.player.x, this.player.y, destinationX, destinationY);
+      (this.player.body as Phaser.Physics.Arcade.Body).reset(destinationX, destinationY);
+      return;
+    }
+
+    this.vitals.restoreShield(getShieldPoints(skillId, learned.level));
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
+    this.playShieldPulse();
+  }
+
+  private updatePlayerSkillPresentation() {
+    const windingUp = this.playerSkills.getSlotStates(this.gameplayTime)
+      .some(slot => slot?.phase === 'windup');
+    if (windingUp) this.player.setTint(0xbdefff);
+    else this.player.clearTint();
+  }
+
+  private playDashTrail(fromX: number, fromY: number, toX: number, toY: number) {
+    const trail = this.add.graphics().setDepth(1);
+    trail.lineStyle(8, 0x4ebcff, 0.65);
+    trail.lineBetween(fromX, fromY, toX, toY);
+    this.tweens.add({
+      targets: trail,
+      alpha: 0,
+      duration: 220,
+      onComplete: () => trail.destroy(),
+    });
+  }
+
+  private playShieldPulse() {
+    const pulse = this.add.graphics({ x: this.player.x, y: this.player.y }).setDepth(3);
+    pulse.lineStyle(4, 0x55d8ff, 0.9);
+    pulse.strokeCircle(0, 0, 28);
+    this.tweens.add({
+      targets: pulse,
+      scale: 1.8,
+      alpha: 0,
+      duration: 360,
+      onComplete: () => pulse.destroy(),
+    });
+  }
+
   private shoot() {
     const direction = this.playerDirection.facingVector;
     const projectile = createProjectileState({
       id: `projectile-${this.bulletId++}`,
       ownerId: 'player',
       faction: 'player',
-      damage: this.playerAttack,
+      damage: this.playerAttack + this.playerPassives.getModifiers().attackBonus,
       velocityX: direction.x * BULLET_SPEED,
       velocityY: direction.y * BULLET_SPEED,
       remainingDistance: 500,
@@ -286,8 +451,13 @@ export class GameScene extends Phaser.Scene {
     );
   }
 
-  private spawnProjectile(projectile: ReturnType<typeof createProjectileState>, x: number, y: number) {
-    return createProjectileView(this, this.projectiles, projectile, x, y);
+  private spawnProjectile(
+    projectile: ReturnType<typeof createProjectileState>,
+    x: number,
+    y: number,
+    visualStyle: ProjectileVisualStyle = 'basic-lightning',
+  ) {
+    return createProjectileView(this, this.projectiles, projectile, x, y, visualStyle);
   }
 
   private syncBulletVisuals() {
@@ -359,8 +529,36 @@ export class GameScene extends Phaser.Scene {
       !canProjectileHit(projectile, 'enemy') ||
       !isProjectileCollisionEnabled(projectile, this.gameplayTime)
     ) return;
+    const impactX = monster.x;
+    const impactY = monster.y;
     projectileView.destroy();
-    const damageResult = applyMonsterDamage(monster.combat, projectile.damage);
+    this.damageMonster(monster, projectile.damage);
+
+    if (projectile.impact?.type === 'splash') {
+      const { radius, damageMultiplier } = projectile.impact;
+      playLightningSkillImpact(this, impactX, impactY, radius);
+      const splashDamage = Math.max(1, Math.round(projectile.damage * damageMultiplier));
+      this.monsters.children.each(child => {
+        const nearbyMonster = child as MonsterSprite;
+        if (
+          nearbyMonster === monster ||
+          nearbyMonster.getData('defeated') ||
+          Phaser.Math.Distance.Between(
+            impactX,
+            impactY,
+            nearbyMonster.x,
+            nearbyMonster.y,
+          ) > radius
+        ) return null;
+        this.damageMonster(nearbyMonster, splashDamage);
+        return null;
+      });
+    }
+  };
+
+  private damageMonster(monster: MonsterSprite, damage: number) {
+    if (monster.getData('defeated')) return;
+    const damageResult = applyMonsterDamage(monster.combat, damage);
     monster.healthBar.setVisible(!damageResult.defeated);
     this.updateMonsterHealthBar(monster);
     if (!damageResult.defeated) {
@@ -379,7 +577,7 @@ export class GameScene extends Phaser.Scene {
       this.progression.state.experienceToNext,
     );
     if (experienceResult.levelUps > 0) this.handleLevelUp(experienceResult.levelUps);
-  };
+  }
 
   private onProjectileHitPlayer: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
     firstObject,
@@ -492,6 +690,7 @@ export class GameScene extends Phaser.Scene {
     this.ended = true;
     this.damageTween?.stop();
     this.player.setAlpha(1);
+    this.player.clearTint();
     this.physics.pause();
     this.monsterTimer?.remove(false);
     this.foodTimer?.remove(false);

@@ -47,6 +47,11 @@ export class PlayerVitals {
     this.state.shield = Math.min(this.state.maxShield, this.state.shield + Math.max(0, amount));
   }
 
+  adjustMaxShield(amount: number) {
+    this.state.maxShield = Math.max(0, this.state.maxShield + amount);
+    this.state.shield = Math.min(this.state.shield, this.state.maxShield);
+  }
+
   takeDamage(amount: number, now: number): DamageResult {
     if (amount <= 0 || now < this.state.invulnerableUntil || this.state.hp <= 0) {
       return { applied: false, hpLost: 0, shieldLost: 0, defeated: this.state.hp <= 0 };
