@@ -87,8 +87,13 @@ body {
 }
 
 .vital-pip-shield::before {
-  content: "\1F6E1\FE0E";
-  font-size: 17px;
+  content: "";
+  width: 15px;
+  height: 17px;
+  display: block;
+  background: currentColor;
+  clip-path: polygon(50% 0, 91% 15%, 84% 57%, 72% 79%, 50% 100%, 28% 79%, 16% 57%, 9% 15%);
+  filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.7));
 }
 
 .vital-pip-hp[data-active="true"] {
@@ -126,6 +131,34 @@ body {
   color: rgba(255, 243, 176, 0.72);
   font-size: 11px;
   text-align: right;
+}
+
+.active-effects {
+  display: flex;
+  max-width: 280px;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.effect-chip {
+  padding: 3px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 11px;
+  text-shadow: none;
+}
+
+.effect-chip-haste {
+  color: #75f0a8;
+}
+
+.effect-chip-rapidFire {
+  color: #72c7ff;
+}
+
+.effect-chip-xpBoost {
+  color: #ffd24a;
 }
 
 .level-up {

@@ -39,6 +39,14 @@ export class PlayerVitals {
     this.state.hp = Math.min(this.state.maxHp, this.state.hp + Math.max(0, healAmount));
   }
 
+  restoreHp(amount: number) {
+    this.state.hp = Math.min(this.state.maxHp, this.state.hp + Math.max(0, amount));
+  }
+
+  restoreShield(amount: number) {
+    this.state.shield = Math.min(this.state.maxShield, this.state.shield + Math.max(0, amount));
+  }
+
   takeDamage(amount: number, now: number): DamageResult {
     if (amount <= 0 || now < this.state.invulnerableUntil || this.state.hp <= 0) {
       return { applied: false, hpLost: 0, shieldLost: 0, defeated: this.state.hp <= 0 };

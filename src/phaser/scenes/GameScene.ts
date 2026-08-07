@@ -1,4 +1,6 @@
 import Phaser from 'phaser';
+import { FoodEffectSystem } from '../../game/simulation/FoodEffectSystem';
+import type { FoodKey } from '../../game/simulation/FoodEffectSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
 import { PlayerVitals } from '../../game/simulation/PlayerVitals';
 import { t } from '../../i18n';
@@ -10,6 +12,7 @@ import {
   showLevelUp,
   showMenu,
   updateHud,
+  updateEffects,
   updateProgression,
   updateVitals,
 } from '../ui/domHud';
@@ -23,6 +26,7 @@ interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
 
 interface FoodSprite extends Phaser.Physics.Arcade.Image {
   foodId: string;
+  foodKey: FoodKey;
   value: number;
   expiresAt: number;
 }
@@ -56,6 +60,7 @@ export class GameScene extends Phaser.Scene {
   private gameplayTime = 0;
   private vitals = new PlayerVitals();
   private progression = new PlayerProgression();
+  private effects = new FoodEffectSystem();
   private damageTween?: Phaser.Tweens.Tween;
 
   constructor() {
@@ -71,6 +76,7 @@ export class GameScene extends Phaser.Scene {
     this.lastShotAt = -Infinity;
     this.vitals.reset();
     this.progression.reset();
+    this.effects.reset();
     hideMenu();
     hideLevelUp();
     window.addEventListener('restart-game', this.restart, { once: true });
@@ -87,6 +93,7 @@ export class GameScene extends Phaser.Scene {
       this.progression.state.experience,
       this.progression.state.experienceToNext,
     );
+    updateEffects([]);
 
     this.physics.world.setBounds(-4000, -4000, 8000, 8000);
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -130,7 +137,9 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (this.ended || this.paused) return;
     this.gameplayTime += Math.min(delta, 50);
-    const speed = 180;
+    this.effects.update(this.gameplayTime);
+    updateEffects(this.effects.getActive(this.gameplayTime));
+    const speed = this.effects.getMoveSpeed(180);
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
     let direction: Direction | undefined;
@@ -180,7 +189,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleShoot() {
-    if (this.ended || this.paused || this.time.now - this.lastShotAt < 500) return;
+    if (
+      this.ended ||
+      this.paused ||
+      this.time.now - this.lastShotAt < this.effects.getAttackCooldown(500)
+    ) return;
     this.lastShotAt = this.time.now;
     this.shoot();
   }
@@ -264,6 +277,7 @@ export class GameScene extends Phaser.Scene {
     const point = this.getSpawnPoint(250);
     const food = this.physics.add.image(point.x, point.y, foodKeys[index]) as FoodSprite;
     food.foodId = `food-${this.foodId++}`;
+    food.foodKey = foodKeys[index];
     food.value = value;
     food.expiresAt = this.time.now + (10 - value) * 1000;
     this.foods.add(food);
@@ -282,7 +296,7 @@ export class GameScene extends Phaser.Scene {
     bullet.destroy();
     playMonsterDefeat(this, monster);
     this.killed += 1;
-    const experienceResult = this.progression.gainExperience(1);
+    const experienceResult = this.progression.gainExperience(this.effects.getExperienceGain(1));
     updateHud(this.score, this.killed);
     updateProgression(
       this.progression.state.level,
@@ -306,6 +320,16 @@ export class GameScene extends Phaser.Scene {
   private onFoodEat: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (playerObject, foodObject) => {
     const food = foodObject as unknown as FoodSprite;
     food.destroy();
+    const result = this.effects.consume(food.foodKey, this.gameplayTime);
+    this.vitals.restoreHp(result.restoreHp);
+    this.vitals.restoreShield(result.restoreShield);
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
+    updateEffects(this.effects.getActive(this.gameplayTime));
     this.score += food.value;
     updateHud(this.score, this.killed);
     void playerObject;

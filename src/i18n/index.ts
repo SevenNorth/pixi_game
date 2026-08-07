@@ -13,6 +13,10 @@ const messages = {
     levelUp: '升级！',
     maxHpAdded: '最大生命值 +{amount}',
     gameOver: '游戏结束｜分数：{score}｜击杀：{killed}',
+    effectHaste: '疾速',
+    effectRapidFire: '连射',
+    effectXpBoost: '经验加成',
+    effectStatus: '{name} x{stacks} · {seconds}秒',
   },
   en: {
     hp: 'HP',
@@ -28,6 +32,10 @@ const messages = {
     levelUp: 'LEVEL UP!',
     maxHpAdded: 'MAX HP +{amount}',
     gameOver: 'GAME OVER | SCORE: {score} | KILLED: {killed}',
+    effectHaste: 'Haste',
+    effectRapidFire: 'Rapid fire',
+    effectXpBoost: 'XP boost',
+    effectStatus: '{name} x{stacks} · {seconds}s',
   },
 } as const;
 
