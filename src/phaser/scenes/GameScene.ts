@@ -1,7 +1,19 @@
 import Phaser from 'phaser';
 import { FoodEffectSystem } from '../../game/simulation/FoodEffectSystem';
 import type { FoodKey } from '../../game/simulation/FoodEffectSystem';
+import {
+  applyMonsterDamage,
+  createMonsterCombatState,
+  MONSTER_MAX_CHASE_DISTANCE,
+  MONSTER_PATROL_RADIUS,
+  MONSTER_PATROL_REACH_DISTANCE,
+  pauseMonsterPatrol,
+  setMonsterPatrolTarget,
+  updateMonsterAggro,
+} from '../../game/simulation/MonsterCombat';
+import type { MonsterCombatState } from '../../game/simulation/MonsterCombat';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
+import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
 import { PlayerVitals } from '../../game/simulation/PlayerVitals';
 import { t } from '../../i18n';
 import { assets, foodKeys } from '../assets/manifest';
@@ -22,6 +34,8 @@ type Direction = 'up' | 'right' | 'down' | 'left';
 
 interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   monsterId: string;
+  combat: MonsterCombatState;
+  healthBar: Phaser.GameObjects.Graphics;
 }
 
 interface FoodSprite extends Phaser.Physics.Arcade.Image {
@@ -33,6 +47,7 @@ interface FoodSprite extends Phaser.Physics.Arcade.Image {
 
 interface BulletSprite extends Phaser.GameObjects.Container {
   lightning: Phaser.GameObjects.Graphics;
+  damage: number;
   directionX: number;
   directionY: number;
   remainingDistance: number;
@@ -58,6 +73,7 @@ export class GameScene extends Phaser.Scene {
   private paused = false;
   private lastShotAt = -Infinity;
   private gameplayTime = 0;
+  private playerAttack = 1;
   private vitals = new PlayerVitals();
   private progression = new PlayerProgression();
   private effects = new FoodEffectSystem();
@@ -76,6 +92,7 @@ export class GameScene extends Phaser.Scene {
     this.lastShotAt = -Infinity;
     this.vitals.reset();
     this.progression.reset();
+    this.playerAttack = attackForLevel(this.progression.state.level);
     this.effects.reset();
     hideMenu();
     hideLevelUp();
@@ -160,9 +177,73 @@ export class GameScene extends Phaser.Scene {
       if (monster.getData('defeated')) return null;
       const angle = Phaser.Math.Angle.Between(monster.x, monster.y, this.player.x, this.player.y);
       const monsterBody = monster.body as Phaser.Physics.Arcade.Body;
-      monsterBody.setVelocity(Math.cos(angle) * 98, Math.sin(angle) * 98);
-      const face = Math.abs(Math.cos(angle)) > Math.abs(Math.sin(angle)) ? (Math.cos(angle) < 0 ? 'left' : 'right') : (Math.sin(angle) < 0 ? 'up' : 'down');
-      monster.play(`monster-${face}`, true);
+      const distance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+      const aggro = updateMonsterAggro(monster.combat, distance);
+      if (aggro === 'chasing') {
+        const homeDistance = Phaser.Math.Distance.Between(
+          monster.x,
+          monster.y,
+          monster.combat.homeX,
+          monster.combat.homeY,
+        );
+        if (homeDistance >= MONSTER_MAX_CHASE_DISTANCE) {
+          monster.combat.aggro = 'idle';
+          setMonsterPatrolTarget(monster.combat, monster.combat.homeX, monster.combat.homeY, 0);
+          this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
+        } else {
+          this.moveMonsterToward(monster, this.player.x, this.player.y, monster.combat.speed);
+        }
+      } else if (Phaser.Math.Distance.Between(
+        monster.x,
+        monster.y,
+        monster.combat.homeX,
+        monster.combat.homeY,
+      ) > MONSTER_PATROL_RADIUS * 1.25) {
+        setMonsterPatrolTarget(monster.combat, monster.combat.homeX, monster.combat.homeY, 0);
+        this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
+      } else if (this.gameplayTime < monster.combat.patrolPauseUntil) {
+        monsterBody.setVelocity(0, 0);
+      } else {
+        if (!monster.combat.patrolTargetActive) {
+          const patrolAngle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+          const patrolDistance = Phaser.Math.FloatBetween(60, MONSTER_PATROL_RADIUS);
+          setMonsterPatrolTarget(
+            monster.combat,
+            monster.combat.homeX + Math.cos(patrolAngle) * patrolDistance,
+            monster.combat.homeY + Math.sin(patrolAngle) * patrolDistance,
+            this.gameplayTime,
+          );
+        }
+        const patrolDistance = Phaser.Math.Distance.Between(
+          monster.x,
+          monster.y,
+          monster.combat.patrolTargetX,
+          monster.combat.patrolTargetY,
+        );
+        if (patrolDistance <= MONSTER_PATROL_REACH_DISTANCE) {
+          pauseMonsterPatrol(
+            monster.combat,
+            this.gameplayTime + Phaser.Math.FloatBetween(700, 1600),
+          );
+          monsterBody.setVelocity(0, 0);
+        } else {
+          this.moveMonsterToward(
+            monster,
+            monster.combat.patrolTargetX,
+            monster.combat.patrolTargetY,
+            monster.combat.speed * 0.55,
+          );
+        }
+      }
+      if (monsterBody.velocity.lengthSq() > 0) {
+        const face = Math.abs(monsterBody.velocity.x) > Math.abs(monsterBody.velocity.y)
+          ? (monsterBody.velocity.x < 0 ? 'left' : 'right')
+          : (monsterBody.velocity.y < 0 ? 'up' : 'down');
+        monster.play(`monster-${face}`, true);
+      } else {
+        monster.anims.pause();
+      }
+      this.updateMonsterHealthBar(monster);
       return null;
     });
 
@@ -215,6 +296,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.existing(bullet);
     this.bullets.add(bullet);
     bullet.lightning = lightning;
+    bullet.damage = this.playerAttack;
     bullet.directionX = direction.x;
     bullet.directionY = direction.y;
     bullet.remainingDistance = 500;
@@ -264,6 +346,9 @@ export class GameScene extends Phaser.Scene {
     const point = this.getSpawnPoint(450);
     const monster = this.physics.add.sprite(point.x, point.y, 'monster', 0) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
+    monster.combat = createMonsterCombatState(1, point.x, point.y);
+    monster.healthBar = this.add.graphics().setDepth(4);
+    monster.healthBar.setVisible(false);
     monster.setData('monsterId', monster.monsterId);
     monster.setSize(34, 48).setOffset(7, 8);
     monster.play('monster-down');
@@ -288,15 +373,31 @@ export class GameScene extends Phaser.Scene {
     return { x: this.player.x + Math.cos(angle) * distance, y: this.player.y + Math.sin(angle) * distance };
   }
 
+  private moveMonsterToward(monster: MonsterSprite, targetX: number, targetY: number, speed: number) {
+    const angle = Phaser.Math.Angle.Between(monster.x, monster.y, targetX, targetY);
+    const body = monster.body as Phaser.Physics.Arcade.Body;
+    body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+  }
+
   private onBulletHit: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (bulletObject, monsterObject) => {
     const bullet = bulletObject as unknown as BulletSprite;
     const monster = monsterObject as unknown as MonsterSprite;
     if (monster.getData('defeated')) return;
-    monster.setData('defeated', true);
     bullet.destroy();
+    const damageResult = applyMonsterDamage(monster.combat, bullet.damage);
+    monster.healthBar.setVisible(!damageResult.defeated);
+    this.updateMonsterHealthBar(monster);
+    if (!damageResult.defeated) {
+      this.playMonsterHit(monster);
+      return;
+    }
+    monster.setData('defeated', true);
+    monster.healthBar.destroy();
     playMonsterDefeat(this, monster);
     this.killed += 1;
-    const experienceResult = this.progression.gainExperience(this.effects.getExperienceGain(1));
+    const experienceResult = this.progression.gainExperience(
+      this.effects.getExperienceGain(monster.combat.experience),
+    );
     updateHud(this.score, this.killed);
     updateProgression(
       this.progression.state.level,
@@ -308,6 +409,7 @@ export class GameScene extends Phaser.Scene {
 
   private handleLevelUp(levelUps: number) {
     this.vitals.increaseMaxHp(levelUps, levelUps);
+    this.playerAttack = attackForLevel(this.progression.state.level);
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
@@ -336,10 +438,12 @@ export class GameScene extends Phaser.Scene {
   };
 
   private onMonsterCatch: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (_playerObject, monsterObject) => {
-    const result = this.vitals.takeDamage(1, this.gameplayTime);
+    const monster = monsterObject as unknown as MonsterSprite;
+    const result = this.vitals.takeDamage(monster.combat.attack, this.gameplayTime);
     if (!result.applied) return;
 
-    (monsterObject as unknown as Phaser.GameObjects.GameObject).destroy();
+    monster.healthBar.destroy();
+    monster.destroy();
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
@@ -362,6 +466,25 @@ export class GameScene extends Phaser.Scene {
       repeat: 5,
       onComplete: () => this.player.setAlpha(1),
     });
+  }
+
+  private playMonsterHit(monster: MonsterSprite) {
+    monster.setTintFill(0xffffff);
+    this.time.delayedCall(70, () => {
+      if (monster.active) monster.clearTint();
+    });
+  }
+
+  private updateMonsterHealthBar(monster: MonsterSprite) {
+    if (!monster.healthBar.visible || !monster.active) return;
+    const width = 36;
+    const height = 4;
+    const ratio = Phaser.Math.Clamp(monster.combat.hp / monster.combat.maxHp, 0, 1);
+    monster.healthBar.clear();
+    monster.healthBar.fillStyle(0x15252d, 0.9);
+    monster.healthBar.fillRect(monster.x - width / 2, monster.y - 36, width, height);
+    monster.healthBar.fillStyle(0xff5b68, 1);
+    monster.healthBar.fillRect(monster.x - width / 2, monster.y - 36, width * ratio, height);
   }
 
   private endGame() {
