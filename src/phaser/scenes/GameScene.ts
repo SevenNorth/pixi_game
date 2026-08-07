@@ -9,6 +9,8 @@ import { getEnemyDefinition } from '../../game/content/enemies/enemyDefinitions'
 import type { EnemyKind } from '../../game/content/enemies/enemyDefinitions';
 import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
 import type { FoodKey } from '../../game/simulation/FoodRecovery';
+import { InfiniteWorldSystem } from '../../game/simulation/InfiniteWorld';
+import type { WorldChunkState, WorldObstacleState } from '../../game/simulation/InfiniteWorld';
 import {
   applyMonsterDamage,
   createMonsterCombatState,
@@ -72,8 +74,10 @@ import {
 } from '../view/projectiles/ProjectileView';
 import type { ProjectileView, ProjectileVisualStyle } from '../view/projectiles/ProjectileView';
 import { ensureEnemyTexture } from '../view/enemies/createEnemyTexture';
+import { ensureObstacleTexture } from '../view/world/createObstacleTexture';
 
 const BULLET_SPEED = 420;
+const WORLD_RUNTIME_HALF_EXTENT = 1_000_000_000;
 
 interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   monsterId: string;
@@ -89,11 +93,16 @@ interface FoodSprite extends Phaser.Physics.Arcade.Image {
   expiresAt: number;
 }
 
+interface ObstacleSprite extends Phaser.Physics.Arcade.Image {
+  obstacleId: string;
+}
+
 export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private monsters!: Phaser.Physics.Arcade.Group;
   private foods!: Phaser.Physics.Arcade.Group;
   private projectiles!: Phaser.Physics.Arcade.Group;
+  private obstacles!: Phaser.Physics.Arcade.StaticGroup;
   private inputController!: PhaserInputController;
   private killed = 0;
   private monsterTimer?: Phaser.Time.TimerEvent;
@@ -111,6 +120,8 @@ export class GameScene extends Phaser.Scene {
   private progression = new PlayerProgression();
   private playerSkills = new PlayerSkillSystem();
   private playerPassives = new PlayerPassiveSystem();
+  private world = new InfiniteWorldSystem();
+  private obstacleSprites = new Map<string, ObstacleSprite>();
   private appliedPassiveMaxShieldBonus = 0;
   private damageTween?: Phaser.Tweens.Tween;
 
@@ -129,6 +140,8 @@ export class GameScene extends Phaser.Scene {
     this.progression.reset();
     this.playerSkills.reset(this.gameplayTime);
     this.playerPassives.reset();
+    this.world.reset();
+    this.obstacleSprites.clear();
     this.appliedPassiveMaxShieldBonus = 0;
     this.playerAttack = attackForLevel(this.progression.state.level);
     hideMenu();
@@ -150,7 +163,12 @@ export class GameScene extends Phaser.Scene {
     updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
     updatePassiveSkills(this.playerPassives.slots);
 
-    this.physics.world.setBounds(-4000, -4000, 8000, 8000);
+    this.physics.world.setBounds(
+      -WORLD_RUNTIME_HALF_EXTENT,
+      -WORLD_RUNTIME_HALF_EXTENT,
+      WORLD_RUNTIME_HALF_EXTENT * 2,
+      WORLD_RUNTIME_HALF_EXTENT * 2,
+    );
     this.inputController = new PhaserInputController(this.input.keyboard!);
     this.events.on(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
@@ -164,14 +182,30 @@ export class GameScene extends Phaser.Scene {
     this.monsters = this.physics.add.group();
     this.foods = this.physics.add.group();
     this.projectiles = this.physics.add.group();
-    this.cameras.main.setBounds(-4000, -4000, 8000, 8000);
+    this.obstacles = this.physics.add.staticGroup();
+    this.cameras.main.setBounds(
+      -WORLD_RUNTIME_HALF_EXTENT,
+      -WORLD_RUNTIME_HALF_EXTENT,
+      WORLD_RUNTIME_HALF_EXTENT * 2,
+      WORLD_RUNTIME_HALF_EXTENT * 2,
+    );
     this.cameras.main.startFollow(this.player, true, 0.12, 0.12);
 
     this.physics.add.overlap(this.projectiles, this.monsters, this.onProjectileHitMonster, undefined, this);
     this.physics.add.overlap(this.projectiles, this.player, this.onProjectileHitPlayer, undefined, this);
     this.physics.add.overlap(this.player, this.foods, this.onFoodEat, undefined, this);
     this.physics.add.overlap(this.player, this.monsters, this.onMonsterCatch, undefined, this);
+    this.physics.add.collider(this.player, this.obstacles);
+    this.physics.add.collider(this.monsters, this.obstacles);
+    this.physics.add.collider(
+      this.projectiles,
+      this.obstacles,
+      this.onProjectileHitObstacle,
+      undefined,
+      this,
+    );
 
+    this.syncWorldChunks();
     this.spawnMonster();
     this.monsterTimer = this.time.addEvent({ delay: 3000, loop: true, callback: this.spawnMonster, callbackScope: this });
     this.foodTimer = this.time.addEvent({ delay: 5000, loop: true, callback: this.spawnFood, callbackScope: this });
@@ -210,6 +244,7 @@ export class GameScene extends Phaser.Scene {
       this.playerDirection.movementVector.x * speed,
       this.playerDirection.movementVector.y * speed,
     );
+    this.syncWorldChunks();
     if (horizontal !== 0 || vertical !== 0) {
       this.playDirectionalAnimation(this.player, 'player', this.playerDirection.animationDirection);
     } else if (this.player.anims.isPlaying && !this.player.anims.isPaused) {
@@ -529,9 +564,71 @@ export class GameScene extends Phaser.Scene {
     this.foods.add(food);
   }
 
+  private syncWorldChunks() {
+    const delta = this.world.syncAround(this.player.x, this.player.y);
+    delta.exited.forEach(chunk => this.removeWorldChunk(chunk));
+    delta.entered.forEach(chunk => this.addWorldChunk(chunk));
+  }
+
+  private addWorldChunk(chunk: WorldChunkState) {
+    chunk.obstacles.forEach(obstacle => this.addWorldObstacle(obstacle));
+  }
+
+  private removeWorldChunk(chunk: WorldChunkState) {
+    chunk.obstacles.forEach(obstacle => {
+      const sprite = this.obstacleSprites.get(obstacle.id);
+      if (!sprite) return;
+      sprite.destroy();
+      this.obstacleSprites.delete(obstacle.id);
+    });
+  }
+
+  private addWorldObstacle(obstacle: WorldObstacleState) {
+    if (this.obstacleSprites.has(obstacle.id)) return;
+    if (!this.isWorldPositionClear(obstacle.x, obstacle.y, 90)) return;
+    const sprite = this.obstacles.create(
+      obstacle.x,
+      obstacle.y,
+      ensureObstacleTexture(this),
+    ) as ObstacleSprite;
+    sprite.obstacleId = obstacle.id;
+    sprite.setDisplaySize(obstacle.width, obstacle.height);
+    sprite.setRotation(obstacle.rotation);
+    sprite.setDepth(0);
+    sprite.refreshBody();
+    this.obstacleSprites.set(obstacle.id, sprite);
+  }
+
+  private isWorldPositionClear(x: number, y: number, clearance: number) {
+    if (Phaser.Math.Distance.Between(x, y, this.player.x, this.player.y) < clearance) return false;
+    const occupiedByMonster = this.monsters.children.entries.some(child => {
+      const monster = child as MonsterSprite;
+      return monster.active && Phaser.Math.Distance.Between(x, y, monster.x, monster.y) < clearance;
+    });
+    if (occupiedByMonster) return false;
+    return !this.foods.children.entries.some(child => {
+      const food = child as FoodSprite;
+      return food.active && Phaser.Math.Distance.Between(x, y, food.x, food.y) < clearance;
+    });
+  }
+
   private getSpawnPoint(distance: number) {
-    const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
-    return { x: this.player.x + Math.cos(angle) * distance, y: this.player.y + Math.sin(angle) * distance };
+    for (let attempt = 0; attempt < 20; attempt += 1) {
+      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      const point = {
+        x: this.player.x + Math.cos(angle) * distance,
+        y: this.player.y + Math.sin(angle) * distance,
+      };
+      if (!this.isObstacleNear(point.x, point.y, 48)) return point;
+    }
+    return { x: this.player.x + distance, y: this.player.y };
+  }
+
+  private isObstacleNear(x: number, y: number, clearance: number) {
+    return Array.from(this.obstacleSprites.values()).some(obstacle => (
+      Math.abs(obstacle.x - x) <= obstacle.displayWidth / 2 + clearance &&
+      Math.abs(obstacle.y - y) <= obstacle.displayHeight / 2 + clearance
+    ));
   }
 
   private moveMonsterToward(monster: MonsterSprite, targetX: number, targetY: number, speed: number) {
@@ -699,6 +796,13 @@ export class GameScene extends Phaser.Scene {
         return null;
       });
     }
+  };
+
+  private onProjectileHitObstacle: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
+    firstObject,
+    secondObject,
+  ) => {
+    this.resolveProjectileView(firstObject, secondObject)?.destroy();
   };
 
   private damageMonster(monster: MonsterSprite, damage: number) {
