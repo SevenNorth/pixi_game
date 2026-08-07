@@ -1,3 +1,6 @@
+import { getEnemyDefinition } from '../content/enemies/enemyDefinitions';
+import type { EnemyKind, EnemySkillKind } from '../content/enemies/enemyDefinitions';
+
 export type MonsterAggroState = 'idle' | 'chasing' | 'returning';
 
 export interface MonsterCombatState {
@@ -14,6 +17,16 @@ export interface MonsterCombatState {
   patrolTargetY: number;
   patrolTargetActive: boolean;
   patrolPauseUntil: number;
+  kind: EnemyKind;
+  nextAttackAt: number;
+  nextSkillAt: number;
+  skillSequence: number;
+  activeSkill?: {
+    kind: EnemySkillKind;
+    endsAt: number;
+    directionX: number;
+    directionY: number;
+  };
 }
 
 export interface MonsterDamageResult {
@@ -28,16 +41,25 @@ export const MONSTER_PATROL_RADIUS = 160;
 export const MONSTER_PATROL_REACH_DISTANCE = 14;
 export const MONSTER_MAX_CHASE_DISTANCE = 600;
 
-export function createMonsterCombatState(level = 1, homeX = 0, homeY = 0): MonsterCombatState {
+export function createMonsterCombatState(
+  level = 1,
+  homeX = 0,
+  homeY = 0,
+  kind: EnemyKind = 'normal',
+  now = 0,
+): MonsterCombatState {
   const normalizedLevel = Math.max(1, Math.floor(level));
-  const maxHp = normalizedLevel + 1;
+  const definition = getEnemyDefinition(kind);
+  const maxHp = kind === 'normal'
+    ? definition.maxHp + Math.max(0, normalizedLevel - 1)
+    : definition.maxHp + Math.max(0, normalizedLevel - 1) * (kind === 'boss' ? 8 : 3);
   return {
     level: normalizedLevel,
     hp: maxHp,
     maxHp,
-    attack: 1,
-    speed: 98,
-    experience: normalizedLevel,
+    attack: definition.attack,
+    speed: definition.speed,
+    experience: definition.experience * normalizedLevel,
     aggro: 'idle',
     homeX,
     homeY,
@@ -45,7 +67,39 @@ export function createMonsterCombatState(level = 1, homeX = 0, homeY = 0): Monst
     patrolTargetY: homeY,
     patrolTargetActive: false,
     patrolPauseUntil: 0,
+    kind,
+    nextAttackAt: now + definition.attackCooldownMs,
+    nextSkillAt: now + definition.skillCooldownMs,
+    skillSequence: 0,
   };
+}
+
+export function getEnemySkillKind(state: MonsterCombatState): EnemySkillKind | undefined {
+  const definition = getEnemyDefinition(state.kind);
+  if (definition.skillKinds.length === 0) return undefined;
+  return definition.skillKinds[state.skillSequence % definition.skillKinds.length];
+}
+
+export function startEnemySkill(
+  state: MonsterCombatState,
+  kind: EnemySkillKind,
+  directionX: number,
+  directionY: number,
+  now: number,
+) {
+  const definition = getEnemyDefinition(state.kind);
+  state.activeSkill = {
+    kind,
+    endsAt: now + definition.warningMs,
+    directionX,
+    directionY,
+  };
+  state.skillSequence += 1;
+}
+
+export function finishEnemySkill(state: MonsterCombatState, now: number) {
+  state.activeSkill = undefined;
+  state.nextSkillAt = now + getEnemyDefinition(state.kind).skillCooldownMs;
 }
 
 export function setMonsterPatrolTarget(

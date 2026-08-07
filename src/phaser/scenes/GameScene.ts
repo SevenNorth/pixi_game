@@ -5,6 +5,8 @@ import {
   playerSkillDefinitions,
 } from '../../game/content/skills/playerSkillDefinitions';
 import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinitions';
+import { getEnemyDefinition } from '../../game/content/enemies/enemyDefinitions';
+import type { EnemyKind } from '../../game/content/enemies/enemyDefinitions';
 import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
 import type { FoodKey } from '../../game/simulation/FoodRecovery';
 import {
@@ -15,6 +17,9 @@ import {
   MONSTER_PATROL_REACH_DISTANCE,
   pauseMonsterPatrol,
   setMonsterPatrolTarget,
+  finishEnemySkill,
+  getEnemySkillKind,
+  startEnemySkill,
   updateMonsterAggro,
 } from '../../game/simulation/MonsterCombat';
 import type { MonsterCombatState } from '../../game/simulation/MonsterCombat';
@@ -53,6 +58,7 @@ import {
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
+import { playEnemySkillImpact, playEnemyWarning } from '../view/fx/playEnemyWarning';
 import {
   playLightningSkillCast,
   playLightningSkillImpact,
@@ -65,6 +71,7 @@ import {
   updateProjectileView,
 } from '../view/projectiles/ProjectileView';
 import type { ProjectileView, ProjectileVisualStyle } from '../view/projectiles/ProjectileView';
+import { ensureEnemyTexture } from '../view/enemies/createEnemyTexture';
 
 const BULLET_SPEED = 420;
 
@@ -73,6 +80,7 @@ interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   combat: MonsterCombatState;
   healthBar: Phaser.GameObjects.Graphics;
   animationDirection: CardinalDirection;
+  warningView?: Phaser.GameObjects.Graphics;
 }
 
 interface FoodSprite extends Phaser.Physics.Arcade.Image {
@@ -230,8 +238,15 @@ export class GameScene extends Phaser.Scene {
         monster.combat.homeY,
       );
       const aggro = updateMonsterAggro(monster.combat, playerDistance, homeDistance);
+      const enemyDefinition = getEnemyDefinition(monster.combat.kind);
       if (aggro === 'chasing') {
-        this.moveMonsterToward(monster, this.player.x, this.player.y, monster.combat.speed);
+        if (monster.combat.kind === 'normal' || playerDistance > enemyDefinition.preferredRange * 1.25) {
+          this.moveMonsterToward(monster, this.player.x, this.player.y, monster.combat.speed);
+        } else if (playerDistance < enemyDefinition.preferredRange * 0.75) {
+          this.moveMonsterToward(monster, this.player.x, this.player.y, -monster.combat.speed * 0.8);
+        } else {
+          monsterBody.setVelocity(0, 0);
+        }
       } else if (aggro === 'returning') {
         if (homeDistance <= MONSTER_PATROL_REACH_DISTANCE) {
           monster.combat.aggro = 'idle';
@@ -280,6 +295,7 @@ export class GameScene extends Phaser.Scene {
           );
         }
       }
+      this.updateEnemyAbilities(monster, playerDistance);
       if (monsterBody.velocity.lengthSq() > 0) {
         monster.animationDirection = resolveCardinalDirection(
           monsterBody.velocity.x,
@@ -471,16 +487,35 @@ export class GameScene extends Phaser.Scene {
   private spawnMonster() {
     if (this.ended) return;
     const point = this.getSpawnPoint(450);
-    const monster = this.physics.add.sprite(point.x, point.y, 'monster', 0) as unknown as MonsterSprite;
+    const kind = this.getNextEnemyKind();
+    const monster = this.physics.add.sprite(
+      point.x,
+      point.y,
+      ensureEnemyTexture(this, kind),
+      0,
+    ) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
-    monster.combat = createMonsterCombatState(1, point.x, point.y);
+    monster.combat = createMonsterCombatState(1, point.x, point.y, kind, this.gameplayTime);
     monster.animationDirection = 'down';
     monster.healthBar = this.add.graphics().setDepth(4);
     monster.healthBar.setVisible(false);
     monster.setData('monsterId', monster.monsterId);
-    monster.setSize(34, 48).setOffset(7, 8);
-    monster.play('monster-down');
+    if (kind === 'normal') {
+      monster.setSize(34, 48).setOffset(7, 8);
+      monster.play('monster-down');
+    } else {
+      const size = kind === 'boss' ? 64 : 48;
+      monster.setSize(size, size).setOffset((88 - size) / 2, (88 - size) / 2);
+      monster.setScale(kind === 'boss' ? 1.1 : 0.9);
+      monster.setData('enemyKind', kind);
+    }
     this.monsters.add(monster);
+  }
+
+  private getNextEnemyKind(): EnemyKind {
+    if (this.monsterId > 0 && this.monsterId % 10 === 0) return 'boss';
+    if (this.monsterId > 0 && this.monsterId % 3 === 0) return 'elite';
+    return 'normal';
   }
 
   private spawnFood() {
@@ -503,6 +538,116 @@ export class GameScene extends Phaser.Scene {
     const angle = Phaser.Math.Angle.Between(monster.x, monster.y, targetX, targetY);
     const body = monster.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+  }
+
+  private updateEnemyAbilities(monster: MonsterSprite, playerDistance: number) {
+    if (monster.combat.kind === 'normal') return;
+    const definition = getEnemyDefinition(monster.combat.kind);
+    const now = this.gameplayTime;
+
+    if (monster.combat.activeSkill) {
+      (monster.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      if (now >= monster.combat.activeSkill.endsAt) {
+        const skill = monster.combat.activeSkill;
+        monster.warningView?.destroy();
+        monster.warningView = undefined;
+        this.launchEnemySkill(monster, skill.kind, skill.directionX, skill.directionY);
+        finishEnemySkill(monster.combat, now);
+      }
+      return;
+    }
+
+    if (
+      now >= monster.combat.nextSkillAt &&
+      playerDistance <= 760
+    ) {
+      const skill = getEnemySkillKind(monster.combat);
+      if (skill) {
+        const direction = this.getDirectionToPlayer(monster);
+        startEnemySkill(monster.combat, skill, direction.x, direction.y, now);
+        const warningView = playEnemyWarning(
+          this,
+          monster.x,
+          monster.y,
+          skill,
+          direction.x,
+          direction.y,
+        );
+        monster.warningView = warningView;
+        warningView.once(Phaser.GameObjects.Events.DESTROY, () => {
+          if (monster.warningView === warningView) monster.warningView = undefined;
+        });
+        return;
+      }
+    }
+
+    if (now >= monster.combat.nextAttackAt && playerDistance <= 680) {
+      const direction = this.getDirectionToPlayer(monster);
+      this.launchEnemyProjectile(monster, direction.x, direction.y);
+      monster.combat.nextAttackAt = now + definition.attackCooldownMs;
+    }
+  }
+
+  private getDirectionToPlayer(monster: MonsterSprite) {
+    const distance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+    if (distance <= 0) return { x: 0, y: 1 };
+    return {
+      x: (this.player.x - monster.x) / distance,
+      y: (this.player.y - monster.y) / distance,
+    };
+  }
+
+  private launchEnemyProjectile(monster: MonsterSprite, directionX: number, directionY: number) {
+    const isBoss = monster.combat.kind === 'boss';
+    const speed = isBoss ? 300 : 250;
+    const visualStyle: ProjectileVisualStyle = isBoss ? 'enemy-skill' : 'basic-lightning';
+    const visualLength = getProjectileVisualLength(visualStyle);
+    const projectile = createProjectileState({
+      id: `projectile-${this.bulletId++}`,
+      ownerId: monster.monsterId,
+      faction: 'enemy',
+      damage: monster.combat.attack,
+      velocityX: directionX * speed,
+      velocityY: directionY * speed,
+      remainingDistance: 720,
+      collisionEnabledAt: this.gameplayTime + 40,
+    });
+    this.spawnProjectile(
+      projectile,
+      monster.x + directionX * (24 + visualLength / 2),
+      monster.y + directionY * (24 + visualLength / 2),
+      visualStyle,
+    );
+  }
+
+  private launchEnemySkill(
+    monster: MonsterSprite,
+    skill: 'aimed-shot' | 'radial-burst',
+    directionX: number,
+    directionY: number,
+  ) {
+    if (skill === 'aimed-shot') {
+      this.launchEnemyProjectile(monster, directionX, directionY);
+      return;
+    }
+
+    const radius = monster.combat.kind === 'boss' ? 150 : 100;
+    playEnemySkillImpact(this, monster.x, monster.y, radius);
+    const distance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+    if (distance <= radius) this.applyPlayerDamage(monster.combat.attack + 1);
+  }
+
+  private applyPlayerDamage(damage: number) {
+    const result = this.vitals.takeDamage(damage, this.gameplayTime);
+    if (!result.applied) return;
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
+    this.playDamageFeedback();
+    if (result.defeated) this.endGame();
   }
 
   private playDirectionalAnimation(
@@ -566,6 +711,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
     monster.setData('defeated', true);
+    monster.warningView?.destroy();
+    monster.warningView = undefined;
     monster.healthBar.destroy();
     playMonsterDefeat(this, monster);
     this.killed += 1;
@@ -591,16 +738,7 @@ export class GameScene extends Phaser.Scene {
       !isProjectileCollisionEnabled(projectile, this.gameplayTime)
     ) return;
     projectileView.destroy();
-    const result = this.vitals.takeDamage(projectile.damage, this.gameplayTime);
-    if (!result.applied) return;
-    updateVitals(
-      this.vitals.state.hp,
-      this.vitals.state.maxHp,
-      this.vitals.state.shield,
-      this.vitals.state.maxShield,
-    );
-    this.playDamageFeedback();
-    if (result.defeated) this.endGame();
+    this.applyPlayerDamage(projectile.damage);
   };
 
   private resolveProjectileView(firstObject: unknown, secondObject: unknown) {
@@ -648,6 +786,8 @@ export class GameScene extends Phaser.Scene {
     if (!result.applied) return;
 
     monster.healthBar.destroy();
+    monster.warningView?.destroy();
+    monster.warningView = undefined;
     monster.destroy();
     updateVitals(
       this.vitals.state.hp,
@@ -675,13 +815,14 @@ export class GameScene extends Phaser.Scene {
 
   private updateMonsterHealthBar(monster: MonsterSprite) {
     if (!monster.healthBar.visible || !monster.active) return;
-    const width = 36;
+    const width = monster.combat.kind === 'boss' ? 88 : monster.combat.kind === 'elite' ? 52 : 36;
     const height = 4;
     const ratio = Phaser.Math.Clamp(monster.combat.hp / monster.combat.maxHp, 0, 1);
     monster.healthBar.clear();
     monster.healthBar.fillStyle(0x15252d, 0.9);
     monster.healthBar.fillRect(monster.x - width / 2, monster.y - 36, width, height);
-    monster.healthBar.fillStyle(0xff5b68, 1);
+    const healthColor = monster.combat.kind === 'boss' ? 0xff9d45 : monster.combat.kind === 'elite' ? 0xc778ff : 0xff5b68;
+    monster.healthBar.fillStyle(healthColor, 1);
     monster.healthBar.fillRect(monster.x - width / 2, monster.y - 36, width * ratio, height);
   }
 

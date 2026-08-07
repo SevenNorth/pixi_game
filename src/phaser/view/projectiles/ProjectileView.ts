@@ -5,7 +5,7 @@ import {
 } from '../../../game/simulation/ProjectileSystem';
 import type { Faction, ProjectileState } from '../../../game/simulation/ProjectileSystem';
 
-export type ProjectileVisualStyle = 'basic-lightning' | 'skill-lightning';
+export type ProjectileVisualStyle = 'basic-lightning' | 'skill-lightning' | 'enemy-skill';
 
 const PROJECTILE_STYLES = {
   'basic-lightning': {
@@ -25,6 +25,15 @@ const PROJECTILE_STYLES = {
     widths: [13, 8, 3] as const,
     colors: [0x1b9cff, 0x65e7ff, 0xffffff] as const,
     alphas: [0.5, 0.96, 1] as const,
+  },
+  'enemy-skill': {
+    length: 76,
+    thickness: 28,
+    segments: 7,
+    jitter: 8,
+    widths: [10, 6, 3] as const,
+    colors: [0xff3158, 0xff8a5b, 0xfff3cf] as const,
+    alphas: [0.55, 0.95, 1] as const,
   },
 } as const;
 
@@ -73,7 +82,7 @@ export function createProjectileView(
   view.visualStyle = visualStyle;
   view.setData('projectileId', projectile.id);
   lightning.setPosition(view.x, view.y).setDepth(1);
-  if (visualStyle === 'skill-lightning') lightning.setBlendMode(Phaser.BlendModes.ADD);
+  if (visualStyle !== 'basic-lightning') lightning.setBlendMode(Phaser.BlendModes.ADD);
   view.once(Phaser.GameObjects.Events.DESTROY, () => lightning.destroy());
 
   const body = view.body as Phaser.Physics.Arcade.Body;
@@ -131,7 +140,7 @@ function drawLightning(view: ProjectileView) {
   ));
 
   lightning.clear();
-  if (view.visualStyle === 'skill-lightning') {
+  if (view.visualStyle !== 'basic-lightning') {
     strokeLightning(lightning, points, style.widths[0], style.colors[0], style.alphas[0]);
     strokeLightning(lightning, points, style.widths[1], style.colors[1], style.alphas[1]);
     strokeLightning(lightning, points, style.widths[2], style.colors[2], style.alphas[2]);
