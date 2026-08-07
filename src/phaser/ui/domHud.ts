@@ -14,6 +14,7 @@ let killed: HTMLElement;
 let hpPips: HTMLElement;
 let shieldPips: HTMLElement;
 let level: HTMLElement;
+let mapLevel: HTMLElement;
 let experienceBar: HTMLElement;
 let experienceLabel: HTMLElement;
 let levelUp: HTMLElement;
@@ -37,6 +38,7 @@ export function initDomHud(container: HTMLElement) {
         </div>
       </div>
       <div class="hud-counters">
+        <div id="map-level" class="hud-stat map-level">${t('mapLevel', { level: 1 })}</div>
         <div id="level" class="hud-stat">${t('level', { level: 1 })}</div>
         <div id="killed" class="hud-stat">${t('killed', { killed: 0 })}</div>
       </div>
@@ -87,6 +89,7 @@ export function initDomHud(container: HTMLElement) {
   hpPips = root.querySelector('#hp-pips') as HTMLElement;
   shieldPips = root.querySelector('#shield-pips') as HTMLElement;
   level = root.querySelector('#level') as HTMLElement;
+  mapLevel = root.querySelector('#map-level') as HTMLElement;
   experienceBar = root.querySelector('#experience-bar') as HTMLElement;
   experienceLabel = root.querySelector('#experience-label') as HTMLElement;
   levelUp = root.querySelector('#level-up') as HTMLElement;
@@ -159,6 +162,10 @@ export function updateProgression(levelNumber: number, experience: number, exper
   const progress = experienceToNext > 0 ? Math.min(1, experience / experienceToNext) : 1;
   experienceBar.style.width = `${progress * 100}%`;
   experienceLabel.textContent = t('experienceValue', { experience, next: experienceToNext });
+}
+
+export function updateMapLevel(levelNumber: number) {
+  mapLevel.textContent = t('mapLevel', { level: levelNumber });
 }
 
 const playerSkillNameKeys: Record<PlayerSkillId, MessageKey> = {

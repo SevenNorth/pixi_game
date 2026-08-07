@@ -11,6 +11,7 @@ import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
 import type { FoodKey } from '../../game/simulation/FoodRecovery';
 import { InfiniteWorldSystem } from '../../game/simulation/InfiniteWorld';
 import type { WorldChunkState, WorldObstacleState } from '../../game/simulation/InfiniteWorld';
+import { MapProgression } from '../../game/simulation/MapProgression';
 import {
   applyMonsterDamage,
   createMonsterCombatState,
@@ -53,6 +54,7 @@ import {
   showLevelUp,
   showMenu,
   updateHud,
+  updateMapLevel,
   updatePassiveSkills,
   updateProgression,
   updateSkillSlots,
@@ -121,6 +123,7 @@ export class GameScene extends Phaser.Scene {
   private playerSkills = new PlayerSkillSystem();
   private playerPassives = new PlayerPassiveSystem();
   private world = new InfiniteWorldSystem();
+  private mapProgression = new MapProgression();
   private obstacleSprites = new Map<string, ObstacleSprite>();
   private appliedPassiveMaxShieldBonus = 0;
   private damageTween?: Phaser.Tweens.Tween;
@@ -141,6 +144,7 @@ export class GameScene extends Phaser.Scene {
     this.playerSkills.reset(this.gameplayTime);
     this.playerPassives.reset();
     this.world.reset();
+    this.mapProgression.reset();
     this.obstacleSprites.clear();
     this.appliedPassiveMaxShieldBonus = 0;
     this.playerAttack = attackForLevel(this.progression.state.level);
@@ -149,6 +153,7 @@ export class GameScene extends Phaser.Scene {
     window.addEventListener('restart-game', this.restart, { once: true });
     showHud();
     updateHud(this.killed);
+    updateMapLevel(this.mapProgression.state.level);
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
