@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
-import { FoodEffectSystem } from '../../game/simulation/FoodEffectSystem';
-import type { FoodKey } from '../../game/simulation/FoodEffectSystem';
+import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
+import type { FoodKey } from '../../game/simulation/FoodRecovery';
 import {
   applyMonsterDamage,
   createMonsterCombatState,
@@ -24,7 +24,6 @@ import {
   showLevelUp,
   showMenu,
   updateHud,
-  updateEffects,
   updateProgression,
   updateVitals,
 } from '../ui/domHud';
@@ -41,7 +40,6 @@ interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
 interface FoodSprite extends Phaser.Physics.Arcade.Image {
   foodId: string;
   foodKey: FoodKey;
-  value: number;
   expiresAt: number;
 }
 
@@ -62,7 +60,6 @@ export class GameScene extends Phaser.Scene {
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'W' | 'A' | 'S' | 'D', Phaser.Input.Keyboard.Key>;
   private space!: Phaser.Input.Keyboard.Key;
-  private score = 0;
   private killed = 0;
   private monsterTimer?: Phaser.Time.TimerEvent;
   private foodTimer?: Phaser.Time.TimerEvent;
@@ -76,7 +73,6 @@ export class GameScene extends Phaser.Scene {
   private playerAttack = 1;
   private vitals = new PlayerVitals();
   private progression = new PlayerProgression();
-  private effects = new FoodEffectSystem();
   private damageTween?: Phaser.Tweens.Tween;
 
   constructor() {
@@ -86,19 +82,17 @@ export class GameScene extends Phaser.Scene {
   create() {
     this.ended = false;
     this.paused = false;
-    this.score = 0;
     this.killed = 0;
     this.gameplayTime = 0;
     this.lastShotAt = -Infinity;
     this.vitals.reset();
     this.progression.reset();
     this.playerAttack = attackForLevel(this.progression.state.level);
-    this.effects.reset();
     hideMenu();
     hideLevelUp();
     window.addEventListener('restart-game', this.restart, { once: true });
     showHud();
-    updateHud(this.score, this.killed);
+    updateHud(this.killed);
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
@@ -110,7 +104,6 @@ export class GameScene extends Phaser.Scene {
       this.progression.state.experience,
       this.progression.state.experienceToNext,
     );
-    updateEffects([]);
 
     this.physics.world.setBounds(-4000, -4000, 8000, 8000);
     this.cursors = this.input.keyboard!.createCursorKeys();
@@ -154,9 +147,7 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number) {
     if (this.ended || this.paused) return;
     this.gameplayTime += Math.min(delta, 50);
-    this.effects.update(this.gameplayTime);
-    updateEffects(this.effects.getActive(this.gameplayTime));
-    const speed = this.effects.getMoveSpeed(180);
+    const speed = 180;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     body.setVelocity(0, 0);
     let direction: Direction | undefined;
@@ -273,7 +264,7 @@ export class GameScene extends Phaser.Scene {
     if (
       this.ended ||
       this.paused ||
-      this.time.now - this.lastShotAt < this.effects.getAttackCooldown(500)
+      this.time.now - this.lastShotAt < 500
     ) return;
     this.lastShotAt = this.time.now;
     this.shoot();
@@ -358,13 +349,11 @@ export class GameScene extends Phaser.Scene {
   private spawnFood() {
     if (this.ended) return;
     const index = Phaser.Math.Between(0, foodKeys.length - 1);
-    const value = index + 1;
     const point = this.getSpawnPoint(250);
     const food = this.physics.add.image(point.x, point.y, foodKeys[index]) as FoodSprite;
     food.foodId = `food-${this.foodId++}`;
     food.foodKey = foodKeys[index];
-    food.value = value;
-    food.expiresAt = this.time.now + (10 - value) * 1000;
+    food.expiresAt = this.time.now + 9000;
     this.foods.add(food);
   }
 
@@ -395,10 +384,8 @@ export class GameScene extends Phaser.Scene {
     monster.healthBar.destroy();
     playMonsterDefeat(this, monster);
     this.killed += 1;
-    const experienceResult = this.progression.gainExperience(
-      this.effects.getExperienceGain(monster.combat.experience),
-    );
-    updateHud(this.score, this.killed);
+    const experienceResult = this.progression.gainExperience(monster.combat.experience);
+    updateHud(this.killed);
     updateProgression(
       this.progression.state.level,
       this.progression.state.experience,
@@ -421,19 +408,16 @@ export class GameScene extends Phaser.Scene {
 
   private onFoodEat: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (playerObject, foodObject) => {
     const food = foodObject as unknown as FoodSprite;
+    if (this.vitals.state.hp >= this.vitals.state.maxHp) return;
     food.destroy();
-    const result = this.effects.consume(food.foodKey, this.gameplayTime);
-    this.vitals.restoreHp(result.restoreHp);
-    this.vitals.restoreShield(result.restoreShield);
+    this.vitals.restoreHp(getFoodRecovery(food.foodKey));
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
       this.vitals.state.shield,
       this.vitals.state.maxShield,
     );
-    updateEffects(this.effects.getActive(this.gameplayTime));
-    this.score += food.value;
-    updateHud(this.score, this.killed);
+    updateHud(this.killed);
     void playerObject;
   };
 
@@ -495,7 +479,7 @@ export class GameScene extends Phaser.Scene {
     this.physics.pause();
     this.monsterTimer?.remove(false);
     this.foodTimer?.remove(false);
-    showMenu(t('gameOver', { score: this.score, killed: this.killed }), false, true);
+    showMenu(t('gameOver', { killed: this.killed }), false, true);
   }
 
   private restart = () => {

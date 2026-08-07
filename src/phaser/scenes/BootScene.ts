@@ -21,7 +21,7 @@ export class BootScene extends Phaser.Scene {
     this.load.image('apple', assets.apple);
     this.load.image('banana', assets.banana);
     this.load.image('bread', assets.bread);
-    this.load.image('chess', assets.chess);
+    this.load.image('cheese', assets.cheese);
     this.load.image('strawberry', assets.strawberry);
   }
 

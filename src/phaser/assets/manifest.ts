@@ -1,7 +1,7 @@
 import apple from '../../assets/apple.png';
 import banana from '../../assets/bananer.png';
 import bread from '../../assets/bread.png';
-import chess from '../../assets/chess.png';
+import cheese from '../../assets/chess.png';
 import gameover from '../../assets/gameover.png';
 import ghost from '../../assets/ghost.png';
 import pikaqiu from '../../assets/pikaqiu.png';
@@ -18,8 +18,8 @@ export const assets = {
   apple,
   banana,
   bread,
-  chess,
+  cheese,
   strawberry,
 } as const;
 
-export const foodKeys = ['apple', 'banana', 'bread', 'chess', 'strawberry'] as const;
+export const foodKeys = ['apple', 'banana', 'bread', 'cheese', 'strawberry'] as const;

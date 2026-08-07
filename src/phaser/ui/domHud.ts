@@ -1,12 +1,10 @@
 import { foodKeys } from '../assets/manifest';
 import { t } from '../../i18n';
-import type { ActiveEffectId, ActiveEffectView } from '../../game/simulation/FoodEffectSystem';
 
 let root: HTMLElement;
 let hud: HTMLElement;
 let menu: HTMLElement;
 let message: HTMLElement;
-let score: HTMLElement;
 let killed: HTMLElement;
 let hpPips: HTMLElement;
 let shieldPips: HTMLElement;
@@ -15,7 +13,6 @@ let experienceBar: HTMLElement;
 let experienceLabel: HTMLElement;
 let levelUp: HTMLElement;
 let levelUpTimer: number | undefined;
-let effects: HTMLElement;
 
 export function initDomHud(container: HTMLElement) {
   root = container;
@@ -33,14 +30,12 @@ export function initDomHud(container: HTMLElement) {
       </div>
       <div class="hud-counters">
         <div id="level" class="hud-stat">${t('level', { level: 1 })}</div>
-        <div id="score" class="hud-stat">${t('score', { score: 0 })}</div>
         <div id="killed" class="hud-stat">${t('killed', { killed: 0 })}</div>
       </div>
       <div class="experience-track" aria-label="${t('experience')}">
         <span id="experience-bar" class="experience-bar"></span>
       </div>
       <div id="experience-label" class="experience-label">${t('experienceValue', { experience: 0, next: 3 })}</div>
-      <div id="active-effects" class="active-effects"></div>
     </div>
     <div id="game-menu" class="game-menu">
       <div class="menu-actions">
@@ -59,7 +54,6 @@ export function initDomHud(container: HTMLElement) {
   hud = root.querySelector('.hud') as HTMLElement;
   menu = root.querySelector('#game-menu') as HTMLElement;
   message = root.querySelector('#menu-message') as HTMLElement;
-  score = root.querySelector('#score') as HTMLElement;
   killed = root.querySelector('#killed') as HTMLElement;
   hpPips = root.querySelector('#hp-pips') as HTMLElement;
   shieldPips = root.querySelector('#shield-pips') as HTMLElement;
@@ -67,7 +61,6 @@ export function initDomHud(container: HTMLElement) {
   experienceBar = root.querySelector('#experience-bar') as HTMLElement;
   experienceLabel = root.querySelector('#experience-label') as HTMLElement;
   levelUp = root.querySelector('#level-up') as HTMLElement;
-  effects = root.querySelector('#active-effects') as HTMLElement;
   const startButton = root.querySelector('#start-game') as HTMLButtonElement;
   const restartButton = root.querySelector('#restart-game') as HTMLButtonElement;
   startButton.style.backgroundImage = `url(${getAssetUrl('start')})`;
@@ -118,8 +111,7 @@ export function hideHud() {
   hud.hidden = true;
 }
 
-export function updateHud(nextScore: number, nextKilled: number) {
-  score.textContent = t('score', { score: nextScore });
+export function updateHud(nextKilled: number) {
   killed.textContent = t('killed', { killed: nextKilled });
 }
 
@@ -133,26 +125,6 @@ export function updateProgression(levelNumber: number, experience: number, exper
   const progress = experienceToNext > 0 ? Math.min(1, experience / experienceToNext) : 1;
   experienceBar.style.width = `${progress * 100}%`;
   experienceLabel.textContent = t('experienceValue', { experience, next: experienceToNext });
-}
-
-export function updateEffects(activeEffects: ActiveEffectView[]) {
-  const names: Record<ActiveEffectId, ReturnType<typeof t>> = {
-    haste: t('effectHaste'),
-    rapidFire: t('effectRapidFire'),
-    xpBoost: t('effectXpBoost'),
-  };
-  effects.replaceChildren(
-    ...activeEffects.map(effect => {
-      const item = document.createElement('span');
-      item.className = `effect-chip effect-chip-${effect.id}`;
-      item.textContent = t('effectStatus', {
-        name: names[effect.id],
-        stacks: effect.stacks,
-        seconds: Math.max(1, Math.ceil(effect.remainingMs / 1000)),
-      });
-      return item;
-    }),
-  );
 }
 
 function renderPips(container: HTMLElement, value: number, max: number, type: 'hp' | 'shield') {
