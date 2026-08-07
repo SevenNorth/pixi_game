@@ -21,6 +21,7 @@ import {
   applyMonsterDamage,
   createMonsterCombatState,
   pauseMonsterPatrol,
+  relocateMonsterCombatState,
   setMonsterPatrolTarget,
   finishEnemySkill,
   getEnemySkillKind,
@@ -293,7 +294,7 @@ export class GameScene extends Phaser.Scene {
     updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
     this.monsters.children.each(child => {
       const monster = child as MonsterSprite;
-      if (monster.getData('defeated')) return null;
+      if (!monster.active || monster.getData('defeated')) return null;
       const monsterBody = monster.body as Phaser.Physics.Arcade.Body;
       const playerDistance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
       const homeDistance = Phaser.Math.Distance.Between(
@@ -564,16 +565,13 @@ export class GameScene extends Phaser.Scene {
     this.recycleDistantMinions();
     this.spawnDirector.syncMapLevel(this.mapProgression.state.level);
     const activeMinions = this.countActiveMinions();
-    if (this.mapProgression.state.status === 'boss-active') return;
-    if (
-      this.mapProgression.state.status === 'boss-ready' &&
-      activeMinions > 0
-    ) return;
     const kind = this.getNextEnemyKind();
-    if (
-      kind !== 'boss' &&
-      !this.spawnDirector.canSpawnMinion(activeMinions)
-    ) return;
+    if (kind !== 'boss') {
+      if (!this.spawnDirector.canActivateMinion(activeMinions)) return;
+      const reusePoint = this.getSpawnPoint(450);
+      if (this.reactivateDormantMinion(reusePoint.x, reusePoint.y)) return;
+      if (!this.spawnDirector.canCreateMinion(activeMinions)) return;
+    }
     const point = this.getSpawnPoint(450);
     if (kind === 'boss') {
       if (!this.mapProgression.markBossSpawned()) return;
@@ -665,9 +663,30 @@ export class GameScene extends Phaser.Scene {
     }) as MonsterSprite[];
     distantMinions.forEach(monster => {
       monster.warningView?.destroy();
-      monster.healthBar.destroy();
-      monster.destroy();
+      monster.warningView = undefined;
+      monster.healthBar.clear().setVisible(false);
+      monster.setData('dormant', true);
+      monster.disableBody(true, true);
     });
+  }
+
+  private reactivateDormantMinion(x: number, y: number) {
+    const monster = this.monsters.children.entries.find(child => {
+      const candidate = child as MonsterSprite;
+      return !candidate.active && candidate.getData('dormant') === true;
+    }) as MonsterSprite | undefined;
+    if (!monster) return false;
+    relocateMonsterCombatState(monster.combat, x, y, this.gameplayTime);
+    monster.setData('dormant', false);
+    monster.setData('defeated', false);
+    monster.animationDirection = 'down';
+    monster.enableBody(true, x, y, true, true);
+    monster.setAlpha(1).clearTint();
+    monster.healthBar.clear().setVisible(false);
+    if (monster.animationPrefix) {
+      monster.play(`${monster.animationPrefix}-down`, true);
+    }
+    return true;
   }
 
   private hasActiveBoss() {
@@ -945,6 +964,7 @@ export class GameScene extends Phaser.Scene {
       this.monsters.children.each(child => {
         const nearbyMonster = child as MonsterSprite;
         if (
+          !nearbyMonster.active ||
           nearbyMonster === monster ||
           nearbyMonster.getData('defeated') ||
           Phaser.Math.Distance.Between(

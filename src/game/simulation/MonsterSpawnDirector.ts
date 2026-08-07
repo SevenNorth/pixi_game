@@ -64,10 +64,14 @@ export class MonsterSpawnDirector {
     if (normalizedMapLevel !== this.state.mapLevel) this.reset(normalizedMapLevel);
   }
 
-  canSpawnMinion(activeMinions: number) {
+  canActivateMinion(activeMinions: number) {
+    return activeMinions < getMonsterSpawnProfile(this.state.mapLevel).maxActiveMinions;
+  }
+
+  canCreateMinion(activeMinions: number) {
     const profile = getMonsterSpawnProfile(this.state.mapLevel);
     return (
-      activeMinions < profile.maxActiveMinions &&
+      this.canActivateMinion(activeMinions) &&
       this.state.spawnedMinions < profile.maxTotalMinionSpawns
     );
   }

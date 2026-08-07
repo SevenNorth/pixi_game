@@ -121,6 +121,25 @@ export function pauseMonsterPatrol(state: MonsterCombatState, pauseUntil: number
   state.patrolPauseUntil = pauseUntil;
 }
 
+export function relocateMonsterCombatState(
+  state: MonsterCombatState,
+  homeX: number,
+  homeY: number,
+  now: number,
+) {
+  const definition = getEnemyDefinition(state.kind);
+  state.aggro = 'idle';
+  state.homeX = homeX;
+  state.homeY = homeY;
+  state.patrolTargetX = homeX;
+  state.patrolTargetY = homeY;
+  state.patrolTargetActive = false;
+  state.patrolPauseUntil = now;
+  state.activeSkill = undefined;
+  state.nextAttackAt = now + definition.attackCooldownMs;
+  state.nextSkillAt = now + definition.skillCooldownMs;
+}
+
 export function applyMonsterDamage(state: MonsterCombatState, amount: number): MonsterDamageResult {
   const damage = Math.max(0, amount);
   state.hp = Math.max(0, state.hp - damage);
