@@ -4,6 +4,9 @@ import bread from '../../assets/bread.png';
 import cheese from '../../assets/chess.png';
 import gameover from '../../assets/gameover.png';
 import ghost from '../../assets/ghost.png';
+import monster from '../../assets/monster.png';
+import monster2 from '../../assets/monster2.png';
+import monster3 from '../../assets/monster3.png';
 import pikaqiu from '../../assets/pikaqiu.png';
 import restart from '../../assets/restart.png';
 import start from '../../assets/start.png';
@@ -11,7 +14,10 @@ import strawberry from '../../assets/strawberry.png';
 
 export const assets = {
   player: pikaqiu,
-  monster: ghost,
+  ghost,
+  monster,
+  monster2,
+  monster3,
   start,
   gameover,
   restart,

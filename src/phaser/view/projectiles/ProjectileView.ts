@@ -5,10 +5,18 @@ import {
 } from '../../../game/simulation/ProjectileSystem';
 import type { Faction, ProjectileState } from '../../../game/simulation/ProjectileSystem';
 
-export type ProjectileVisualStyle = 'basic-lightning' | 'skill-lightning' | 'enemy-skill';
+export type ProjectileVisualStyle =
+  | 'basic-lightning'
+  | 'skill-lightning'
+  | 'enemy-skill'
+  | 'enemy-ghost'
+  | 'enemy-ember'
+  | 'enemy-void'
+  | 'enemy-venom';
 
 const PROJECTILE_STYLES = {
   'basic-lightning': {
+    shape: 'lightning',
     length: 64,
     thickness: 20,
     segments: 6,
@@ -18,6 +26,7 @@ const PROJECTILE_STYLES = {
     alphas: [0.42, 0.9, 1] as const,
   },
   'skill-lightning': {
+    shape: 'lightning',
     length: 88,
     thickness: 34,
     segments: 8,
@@ -27,6 +36,7 @@ const PROJECTILE_STYLES = {
     alphas: [0.5, 0.96, 1] as const,
   },
   'enemy-skill': {
+    shape: 'lightning',
     length: 76,
     thickness: 28,
     segments: 7,
@@ -34,6 +44,46 @@ const PROJECTILE_STYLES = {
     widths: [10, 6, 3] as const,
     colors: [0xff3158, 0xff8a5b, 0xfff3cf] as const,
     alphas: [0.55, 0.95, 1] as const,
+  },
+  'enemy-ghost': {
+    shape: 'orb',
+    length: 30,
+    thickness: 24,
+    segments: 5,
+    jitter: 4,
+    widths: [8, 5, 2] as const,
+    colors: [0x7b8cff, 0xc4d0ff, 0xffffff] as const,
+    alphas: [0.45, 0.9, 1] as const,
+  },
+  'enemy-ember': {
+    shape: 'shard',
+    length: 42,
+    thickness: 20,
+    segments: 5,
+    jitter: 4,
+    widths: [8, 5, 2] as const,
+    colors: [0xff4e2e, 0xffaa32, 0xfff1a8] as const,
+    alphas: [0.5, 0.95, 1] as const,
+  },
+  'enemy-void': {
+    shape: 'orb',
+    length: 38,
+    thickness: 30,
+    segments: 5,
+    jitter: 4,
+    widths: [9, 5, 2] as const,
+    colors: [0x6b239f, 0xd34fff, 0xffd9ff] as const,
+    alphas: [0.5, 0.95, 1] as const,
+  },
+  'enemy-venom': {
+    shape: 'orb',
+    length: 34,
+    thickness: 26,
+    segments: 5,
+    jitter: 4,
+    widths: [8, 5, 2] as const,
+    colors: [0x157f43, 0x67db58, 0xeaff9d] as const,
+    alphas: [0.5, 0.95, 1] as const,
   },
 } as const;
 
@@ -117,6 +167,14 @@ export function syncProjectileVisual(view: ProjectileView) {
 function drawLightning(view: ProjectileView) {
   const { lightning, directionX, directionY } = view;
   const style = PROJECTILE_STYLES[view.visualStyle];
+  if (style.shape === 'orb') {
+    drawOrb(lightning, directionX, directionY, style);
+    return;
+  }
+  if (style.shape === 'shard') {
+    drawShard(lightning, directionX, directionY, style);
+    return;
+  }
   const perpendicularX = -directionY;
   const perpendicularY = directionX;
   const points: Phaser.Math.Vector2[] = [
@@ -151,6 +209,58 @@ function drawLightning(view: ProjectileView) {
   strokeLightning(lightning, points, style.widths[0], colors.outer, style.alphas[0]);
   strokeLightning(lightning, points, style.widths[1], colors.middle, style.alphas[1]);
   strokeLightning(lightning, points, style.widths[2], style.colors[2], style.alphas[2]);
+}
+
+function drawOrb(
+  graphics: Phaser.GameObjects.Graphics,
+  directionX: number,
+  directionY: number,
+  style: ProjectileShapeStyle,
+) {
+  const radius = style.thickness / 2;
+  graphics.clear();
+  graphics.fillStyle(style.colors[0], style.alphas[0]);
+  graphics.fillCircle(-directionX * radius * 0.45, -directionY * radius * 0.45, radius);
+  graphics.fillStyle(style.colors[1], style.alphas[1]);
+  graphics.fillCircle(0, 0, radius * 0.68);
+  graphics.fillStyle(style.colors[2], style.alphas[2]);
+  graphics.fillCircle(directionX * 2, directionY * 2, radius * 0.28);
+}
+
+function drawShard(
+  graphics: Phaser.GameObjects.Graphics,
+  directionX: number,
+  directionY: number,
+  style: ProjectileShapeStyle,
+) {
+  const perpendicularX = -directionY;
+  const perpendicularY = directionX;
+  const halfLength = style.length / 2;
+  const halfWidth = style.thickness / 2;
+  graphics.clear();
+  graphics.fillStyle(style.colors[0], style.alphas[0]);
+  graphics.fillTriangle(
+    directionX * halfLength,
+    directionY * halfLength,
+    -directionX * halfLength + perpendicularX * halfWidth,
+    -directionY * halfLength + perpendicularY * halfWidth,
+    -directionX * halfLength - perpendicularX * halfWidth,
+    -directionY * halfLength - perpendicularY * halfWidth,
+  );
+  graphics.lineStyle(3, style.colors[1], style.alphas[1]);
+  graphics.lineBetween(
+    -directionX * halfLength,
+    -directionY * halfLength,
+    directionX * halfLength,
+    directionY * halfLength,
+  );
+}
+
+interface ProjectileShapeStyle {
+  length: number;
+  thickness: number;
+  colors: readonly [number, number, number];
+  alphas: readonly [number, number, number];
 }
 
 function getFactionColors(faction: Faction) {

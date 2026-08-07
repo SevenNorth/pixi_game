@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import { assets } from '../assets/manifest';
 import { initDomHud, setAssetUrls } from '../ui/domHud';
+import { createEnemyAnimations } from '../view/enemies/enemyVisualDefinitions';
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -14,7 +15,10 @@ export class BootScene extends Phaser.Scene {
       initDomHud(root);
     }
     this.load.spritesheet('player', assets.player, { frameWidth: 48, frameHeight: 48 });
-    this.load.spritesheet('monster', assets.monster, { frameWidth: 48, frameHeight: 64 });
+    this.load.spritesheet('enemy-ghost', assets.ghost, { frameWidth: 48, frameHeight: 64 });
+    this.load.spritesheet('enemy-monster', assets.monster, { frameWidth: 48, frameHeight: 48 });
+    this.load.spritesheet('enemy-monster2', assets.monster2, { frameWidth: 64, frameHeight: 64 });
+    this.load.spritesheet('enemy-monster3', assets.monster3, { frameWidth: 48, frameHeight: 48 });
     this.load.image('start', assets.start);
     this.load.image('gameover', assets.gameover);
     this.load.image('restart', assets.restart);
@@ -27,6 +31,7 @@ export class BootScene extends Phaser.Scene {
 
   create() {
     this.createAnimations();
+    createEnemyAnimations(this);
     this.scene.start('MenuScene');
   }
 
@@ -41,12 +46,6 @@ export class BootScene extends Phaser.Scene {
       this.anims.create({
         key: `player-${name}`,
         frames: this.anims.generateFrameNumbers('player', { start, end }),
-        frameRate: 12,
-        repeat: -1,
-      });
-      this.anims.create({
-        key: `monster-${name}`,
-        frames: this.anims.generateFrameNumbers('monster', { start, end }),
         frameRate: 12,
         repeat: -1,
       });

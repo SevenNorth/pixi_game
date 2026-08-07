@@ -76,6 +76,8 @@ import {
 } from '../view/projectiles/ProjectileView';
 import type { ProjectileView, ProjectileVisualStyle } from '../view/projectiles/ProjectileView';
 import { ensureEnemyTexture } from '../view/enemies/createEnemyTexture';
+import { getRandomEnemyVisual } from '../view/enemies/enemyVisualDefinitions';
+import type { EnemyVisualDefinition } from '../view/enemies/enemyVisualDefinitions';
 import { ensureObstacleTexture } from '../view/world/createObstacleTexture';
 
 const BULLET_SPEED = 420;
@@ -87,6 +89,8 @@ interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   healthBar: Phaser.GameObjects.Graphics;
   animationDirection: CardinalDirection;
   warningView?: Phaser.GameObjects.Graphics;
+  visualDefinition?: EnemyVisualDefinition;
+  animationPrefix?: string;
 }
 
 interface FoodSprite extends Phaser.Physics.Arcade.Image {
@@ -342,7 +346,9 @@ export class GameScene extends Phaser.Scene {
           monsterBody.velocity.y,
           monster.animationDirection,
         );
-        this.playDirectionalAnimation(monster, 'monster', monster.animationDirection);
+        if (monster.animationPrefix) {
+          this.playDirectionalAnimation(monster, monster.animationPrefix, monster.animationDirection);
+        }
       } else if (monster.anims.isPlaying && !monster.anims.isPaused) {
         monster.anims.pause();
       }
@@ -528,25 +534,38 @@ export class GameScene extends Phaser.Scene {
     if (this.ended) return;
     const point = this.getSpawnPoint(450);
     const kind = this.getNextEnemyKind();
+    const visualDefinition = kind === 'boss' ? undefined : getRandomEnemyVisual();
     const monster = this.physics.add.sprite(
       point.x,
       point.y,
-      ensureEnemyTexture(this, kind),
+      visualDefinition?.textureKey ?? ensureEnemyTexture(this, kind),
       0,
     ) as unknown as MonsterSprite;
     monster.monsterId = `monster-${this.monsterId++}`;
     monster.combat = createMonsterCombatState(1, point.x, point.y, kind, this.gameplayTime);
     monster.animationDirection = 'down';
+    monster.visualDefinition = visualDefinition;
+    monster.animationPrefix = visualDefinition?.animationPrefix;
     monster.healthBar = this.add.graphics().setDepth(4);
     monster.healthBar.setVisible(false);
     monster.setData('monsterId', monster.monsterId);
-    if (kind === 'normal') {
-      monster.setSize(34, 48).setOffset(7, 8);
-      monster.play('monster-down');
+    if (visualDefinition) {
+      const sizeMultiplier = kind === 'elite' ? 2 : 1;
+      monster.setDisplaySize(
+        visualDefinition.displayWidth * sizeMultiplier,
+        visualDefinition.displayHeight * sizeMultiplier,
+      );
+      const bodyWidth = visualDefinition.frameWidth * 0.68;
+      const bodyHeight = visualDefinition.frameHeight * 0.72;
+      monster.setSize(bodyWidth, bodyHeight).setOffset(
+        (visualDefinition.frameWidth - bodyWidth) / 2,
+        visualDefinition.frameHeight - bodyHeight,
+      );
+      monster.play(`${visualDefinition.animationPrefix}-down`);
     } else {
-      const size = kind === 'boss' ? 64 : 48;
+      const size = 64;
       monster.setSize(size, size).setOffset((88 - size) / 2, (88 - size) / 2);
-      monster.setScale(kind === 'boss' ? 1.1 : 0.9);
+      monster.setScale(1.1);
       monster.setData('enemyKind', kind);
     }
     this.monsters.add(monster);
@@ -707,7 +726,9 @@ export class GameScene extends Phaser.Scene {
   ) {
     const isBoss = monster.combat.kind === 'boss';
     const speed = isBoss ? 300 : 250;
-    const visualStyle: ProjectileVisualStyle = isBoss ? 'enemy-skill' : 'basic-lightning';
+    const visualStyle: ProjectileVisualStyle = isBoss
+      ? 'enemy-skill'
+      : monster.visualDefinition?.projectileStyle ?? 'enemy-ghost';
     const visualLength = getProjectileVisualLength(visualStyle);
     const projectile = createProjectileState({
       id: `projectile-${this.bulletId++}`,
@@ -764,7 +785,7 @@ export class GameScene extends Phaser.Scene {
 
   private playDirectionalAnimation(
     sprite: Phaser.Physics.Arcade.Sprite,
-    prefix: 'player' | 'monster',
+    prefix: string,
     direction: CardinalDirection,
   ) {
     const key = `${prefix}-${direction}`;
@@ -934,15 +955,16 @@ export class GameScene extends Phaser.Scene {
 
   private updateMonsterHealthBar(monster: MonsterSprite) {
     if (!monster.healthBar.visible || !monster.active) return;
-    const width = monster.combat.kind === 'boss' ? 88 : monster.combat.kind === 'elite' ? 52 : 36;
+    const width = monster.combat.kind === 'boss' ? 88 : monster.combat.kind === 'elite' ? 76 : 36;
     const height = 4;
     const ratio = Phaser.Math.Clamp(monster.combat.hp / monster.combat.maxHp, 0, 1);
+    const healthBarY = monster.y - monster.displayHeight / 2 - 8;
     monster.healthBar.clear();
     monster.healthBar.fillStyle(0x15252d, 0.9);
-    monster.healthBar.fillRect(monster.x - width / 2, monster.y - 36, width, height);
+    monster.healthBar.fillRect(monster.x - width / 2, healthBarY, width, height);
     const healthColor = monster.combat.kind === 'boss' ? 0xff9d45 : monster.combat.kind === 'elite' ? 0xc778ff : 0xff5b68;
     monster.healthBar.fillStyle(healthColor, 1);
-    monster.healthBar.fillRect(monster.x - width / 2, monster.y - 36, width * ratio, height);
+    monster.healthBar.fillRect(monster.x - width / 2, healthBarY, width * ratio, height);
   }
 
   private endGame() {
