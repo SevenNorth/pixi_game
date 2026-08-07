@@ -96,12 +96,24 @@ body {
   filter: drop-shadow(0 0 1px rgba(0, 0, 0, 0.7));
 }
 
-.vital-pip-hp[data-active="true"] {
+.vital-pip-hp[data-fill="full"] {
   color: var(--hp);
 }
 
-.vital-pip-shield[data-active="true"] {
+.vital-pip-shield[data-fill="full"] {
   color: var(--shield);
+}
+
+.vital-pip-hp[data-fill="partial"]::before {
+  color: transparent;
+  background: linear-gradient(90deg, var(--hp) 50%, var(--empty-pip) 50%);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+
+.vital-pip-shield[data-fill="partial"]::before {
+  background: linear-gradient(90deg, var(--shield) 50%, var(--empty-pip) 50%);
+  background-clip: content-box;
 }
 
 .hud-counters {

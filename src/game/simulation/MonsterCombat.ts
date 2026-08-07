@@ -7,7 +7,9 @@ export interface MonsterCombatState {
   level: number;
   hp: number;
   maxHp: number;
-  attack: number;
+  contactDamage: number;
+  projectileDamage: number;
+  skillDamage: number;
   speed: number;
   experience: number;
   aggro: MonsterAggroState;
@@ -57,7 +59,9 @@ export function createMonsterCombatState(
     level: normalizedLevel,
     hp: maxHp,
     maxHp,
-    attack: definition.attack,
+    contactDamage: definition.contactDamage,
+    projectileDamage: definition.projectileDamage,
+    skillDamage: definition.skillDamage,
     speed: definition.speed,
     experience: definition.experience * normalizedLevel,
     aggro: 'idle',
@@ -120,7 +124,7 @@ export function pauseMonsterPatrol(state: MonsterCombatState, pauseUntil: number
 }
 
 export function applyMonsterDamage(state: MonsterCombatState, amount: number): MonsterDamageResult {
-  const damage = Math.max(0, Math.floor(amount));
+  const damage = Math.max(0, amount);
   state.hp = Math.max(0, state.hp - damage);
   return {
     damage,

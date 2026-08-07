@@ -4,7 +4,9 @@ export type EnemySkillKind = 'aimed-shot' | 'radial-burst';
 export interface EnemyDefinition {
   kind: EnemyKind;
   maxHp: number;
-  attack: number;
+  contactDamage: number;
+  projectileDamage: number;
+  skillDamage: number;
   speed: number;
   experience: number;
   preferredRange: number;
@@ -18,7 +20,9 @@ export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
   normal: {
     kind: 'normal',
     maxHp: 2,
-    attack: 1,
+    contactDamage: 1,
+    projectileDamage: 0,
+    skillDamage: 0,
     speed: 98,
     experience: 1,
     preferredRange: 0,
@@ -29,8 +33,10 @@ export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
   },
   elite: {
     kind: 'elite',
-    maxHp: 10,
-    attack: 1,
+    maxHp: 6,
+    contactDamage: 1,
+    projectileDamage: 0.5,
+    skillDamage: 1,
     speed: 112,
     experience: 4,
     preferredRange: 240,
@@ -42,7 +48,9 @@ export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
   boss: {
     kind: 'boss',
     maxHp: 42,
-    attack: 2,
+    contactDamage: 1,
+    projectileDamage: 0.5,
+    skillDamage: 1.5,
     speed: 76,
     experience: 12,
     preferredRange: 300,

@@ -225,11 +225,16 @@ function renderPips(container: HTMLElement, value: number, max: number, type: 'h
     ...Array.from({ length: max }, (_, index) => {
       const pip = document.createElement('span');
       pip.className = `vital-pip vital-pip-${type}`;
-      pip.dataset.active = String(index < value);
+      const remaining = value - index;
+      pip.dataset.fill = remaining >= 1 ? 'full' : remaining > 0 ? 'partial' : 'empty';
       return pip;
     }),
   );
-  container.setAttribute('aria-label', `${type} ${value} of ${max}`);
+  container.setAttribute('aria-label', `${type} ${formatPipValue(value)} of ${max}`);
+}
+
+function formatPipValue(value: number) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
 }
 
 export function getFoodKey(index: number) {

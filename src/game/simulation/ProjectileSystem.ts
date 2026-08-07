@@ -23,7 +23,7 @@ export type ProjectileConfig = ProjectileState;
 export function createProjectileState(config: ProjectileConfig): ProjectileState {
   return {
     ...config,
-    damage: Math.max(0, Math.round(config.damage)),
+    damage: Math.max(0, config.damage),
     remainingDistance: Math.max(0, config.remainingDistance),
   };
 }

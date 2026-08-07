@@ -699,7 +699,12 @@ export class GameScene extends Phaser.Scene {
     };
   }
 
-  private launchEnemyProjectile(monster: MonsterSprite, directionX: number, directionY: number) {
+  private launchEnemyProjectile(
+    monster: MonsterSprite,
+    directionX: number,
+    directionY: number,
+    damage = monster.combat.projectileDamage,
+  ) {
     const isBoss = monster.combat.kind === 'boss';
     const speed = isBoss ? 300 : 250;
     const visualStyle: ProjectileVisualStyle = isBoss ? 'enemy-skill' : 'basic-lightning';
@@ -708,7 +713,7 @@ export class GameScene extends Phaser.Scene {
       id: `projectile-${this.bulletId++}`,
       ownerId: monster.monsterId,
       faction: 'enemy',
-      damage: monster.combat.attack,
+      damage,
       velocityX: directionX * speed,
       velocityY: directionY * speed,
       remainingDistance: 720,
@@ -729,14 +734,19 @@ export class GameScene extends Phaser.Scene {
     directionY: number,
   ) {
     if (skill === 'aimed-shot') {
-      this.launchEnemyProjectile(monster, directionX, directionY);
+      this.launchEnemyProjectile(
+        monster,
+        directionX,
+        directionY,
+        monster.combat.skillDamage,
+      );
       return;
     }
 
     const radius = monster.combat.kind === 'boss' ? 150 : 100;
     playEnemySkillImpact(this, monster.x, monster.y, radius);
     const distance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
-    if (distance <= radius) this.applyPlayerDamage(monster.combat.attack + 1);
+    if (distance <= radius) this.applyPlayerDamage(monster.combat.skillDamage);
   }
 
   private applyPlayerDamage(damage: number) {
@@ -891,7 +901,7 @@ export class GameScene extends Phaser.Scene {
 
   private onMonsterCatch: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (_playerObject, monsterObject) => {
     const monster = monsterObject as unknown as MonsterSprite;
-    const result = this.vitals.takeDamage(monster.combat.attack, this.gameplayTime);
+    const result = this.vitals.takeDamage(monster.combat.contactDamage, this.gameplayTime);
     if (!result.applied) return;
 
     monster.healthBar.destroy();
