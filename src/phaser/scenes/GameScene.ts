@@ -28,8 +28,11 @@ import {
   updateVitals,
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
+import { playMonsterHit } from '../view/fx/playMonsterHit';
 
 type Direction = 'up' | 'right' | 'down' | 'left';
+
+const BULLET_LENGTH = 64;
 
 interface MonsterSprite extends Phaser.Physics.Arcade.Sprite {
   monsterId: string;
@@ -50,6 +53,7 @@ interface BulletSprite extends Phaser.GameObjects.Container {
   directionY: number;
   remainingDistance: number;
   flickerElapsed: number;
+  collisionEnabledAt: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -240,10 +244,12 @@ export class GameScene extends Phaser.Scene {
 
     this.bullets.children.each(child => {
       const bullet = child as BulletSprite;
-      const distance = Math.min(delta, 50) * 0.42;
-      bullet.x += bullet.directionX * distance;
-      bullet.y += bullet.directionY * distance;
-      bullet.remainingDistance -= distance;
+      if (this.gameplayTime >= bullet.collisionEnabledAt) {
+        const distance = Math.min(delta, 50) * 0.42;
+        bullet.x += bullet.directionX * distance;
+        bullet.y += bullet.directionY * distance;
+        bullet.remainingDistance -= distance;
+      }
       bullet.flickerElapsed += delta;
       if (bullet.flickerElapsed >= 70) {
         bullet.flickerElapsed = 0;
@@ -280,8 +286,8 @@ export class GameScene extends Phaser.Scene {
     }[face];
     const lightning = this.add.graphics();
     const bullet = this.add.container(
-      this.player.x + direction.x * 72,
-      this.player.y + direction.y * 72,
+      this.player.x + direction.x * 24,
+      this.player.y + direction.y * 24,
       lightning,
     ) as BulletSprite;
     this.physics.add.existing(bullet);
@@ -292,24 +298,28 @@ export class GameScene extends Phaser.Scene {
     bullet.directionY = direction.y;
     bullet.remainingDistance = 500;
     bullet.flickerElapsed = 0;
+    bullet.collisionEnabledAt = this.gameplayTime + 50;
     bullet.setData('bulletId', this.bulletId++);
     bullet.setDepth(2);
     const body = bullet.body as Phaser.Physics.Arcade.Body;
     body.setAllowGravity(false);
-    body.setSize(direction.x === 0 ? 20 : 96, direction.y === 0 ? 20 : 96);
-    body.setOffset(direction.x === 0 ? -10 : -48, direction.y === 0 ? -10 : -48);
+    body.setSize(direction.x === 0 ? 20 : BULLET_LENGTH, direction.y === 0 ? 20 : BULLET_LENGTH);
+    body.setOffset(
+      direction.x === 0 ? -10 : -BULLET_LENGTH / 2,
+      direction.y === 0 ? -10 : -BULLET_LENGTH / 2,
+    );
     this.drawLightning(lightning);
     bullet.setAngle(Phaser.Math.RadToDeg(direction.angle));
     body.setVelocity(0, 0);
   }
 
   private drawLightning(graphics: Phaser.GameObjects.Graphics) {
-    const points: Phaser.Math.Vector2[] = [new Phaser.Math.Vector2(-48, 0)];
-    const segments = 7;
+    const points: Phaser.Math.Vector2[] = [new Phaser.Math.Vector2(0, 0)];
+    const segments = 6;
     for (let index = 1; index < segments; index += 1) {
-      points.push(new Phaser.Math.Vector2(-48 + (96 / segments) * index, Phaser.Math.Between(-8, 8)));
+      points.push(new Phaser.Math.Vector2((BULLET_LENGTH / segments) * index, Phaser.Math.Between(-7, 7)));
     }
-    points.push(new Phaser.Math.Vector2(48, 0));
+    points.push(new Phaser.Math.Vector2(BULLET_LENGTH, 0));
     graphics.clear();
     this.strokeLightning(graphics, points, 7, 0x1677ff, 0.42);
     this.strokeLightning(graphics, points, 4, 0x4ebcff, 0.9);
@@ -371,13 +381,13 @@ export class GameScene extends Phaser.Scene {
   private onBulletHit: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (bulletObject, monsterObject) => {
     const bullet = bulletObject as unknown as BulletSprite;
     const monster = monsterObject as unknown as MonsterSprite;
-    if (monster.getData('defeated')) return;
+    if (monster.getData('defeated') || this.gameplayTime < bullet.collisionEnabledAt) return;
     bullet.destroy();
     const damageResult = applyMonsterDamage(monster.combat, bullet.damage);
     monster.healthBar.setVisible(!damageResult.defeated);
     this.updateMonsterHealthBar(monster);
     if (!damageResult.defeated) {
-      this.playMonsterHit(monster);
+      playMonsterHit(this, monster);
       return;
     }
     monster.setData('defeated', true);
@@ -449,13 +459,6 @@ export class GameScene extends Phaser.Scene {
       yoyo: true,
       repeat: 5,
       onComplete: () => this.player.setAlpha(1),
-    });
-  }
-
-  private playMonsterHit(monster: MonsterSprite) {
-    monster.setTintFill(0xffffff);
-    this.time.delayedCall(70, () => {
-      if (monster.active) monster.clearTint();
     });
   }
 
