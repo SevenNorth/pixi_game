@@ -56,6 +56,7 @@ import type {
   PlayerSkillRuntimeEvent,
 } from '../../game/simulation/PlayerSkillSystem';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
+import { combatBalance } from '../../game/content/combatBalance';
 import { PLAYER_INVULNERABILITY_MS, PlayerVitals } from '../../game/simulation/PlayerVitals';
 import { isSkillLoadoutSafe } from '../../game/simulation/SkillLoadoutSafety';
 import {
@@ -343,7 +344,7 @@ export class GameScene extends Phaser.Scene {
     this.gameplayTime += Math.min(delta, 50);
     const passiveModifiers = this.syncPassiveModifiers();
     this.playerSkills.setCooldownMultiplier(passiveModifiers.cooldownMultiplier);
-    const speed = 180 * passiveModifiers.moveSpeedMultiplier;
+    const speed = combatBalance.player.baseMoveSpeed * passiveModifiers.moveSpeedMultiplier;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
     const { horizontal, vertical } = inputFrame;
     updatePlayerDirection(this.playerDirection, horizontal, vertical);
@@ -1158,7 +1159,9 @@ export class GameScene extends Phaser.Scene {
     damage = monster.combat.projectileDamage,
   ) {
     const isBoss = monster.combat.kind === 'boss';
-    const speed = isBoss ? 300 : 250;
+    const speed = isBoss
+      ? combatBalance.enemyProjectiles.bossSpeed
+      : combatBalance.enemyProjectiles.normalSpeed;
     const visualStyle: ProjectileVisualStyle = isBoss
       ? (monster.combat.bossVariant === 'dragon-green' ? 'enemy-venom' : 'enemy-void')
       : monster.visualDefinition?.projectileStyle ?? 'enemy-ghost';
@@ -1849,8 +1852,8 @@ export class GameScene extends Phaser.Scene {
     if (!result.applied) return;
     const angle = Phaser.Math.Angle.Between(this.player.x, this.player.y, monster.x, monster.y);
     const separation = Math.max(
-      48,
-      (this.player.displayWidth + monster.displayWidth) * 0.35,
+      combatBalance.monsterContact.minimumSeparation,
+      (this.player.displayWidth + monster.displayWidth) * combatBalance.monsterContact.separationScale,
     );
     const body = monster.body as Phaser.Physics.Arcade.Body;
     body.reset(

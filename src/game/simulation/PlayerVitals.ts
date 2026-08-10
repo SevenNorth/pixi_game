@@ -17,7 +17,7 @@ export interface DamageResult {
 
 const DEFAULT_MAX_HP = 3;
 const DEFAULT_MAX_SHIELD = 3;
-export const PLAYER_INVULNERABILITY_MS = 1000;
+export const PLAYER_INVULNERABILITY_MS = combatBalance.player.invulnerabilityMs;
 
 export class PlayerVitals {
   readonly state: PlayerVitalsState = {
@@ -101,3 +101,4 @@ export class PlayerVitals {
     };
   }
 }
+import { combatBalance } from '../content/combatBalance';
