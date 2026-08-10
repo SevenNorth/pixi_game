@@ -1381,7 +1381,9 @@ export class GameScene extends Phaser.Scene {
     );
     if (!candidate) return;
 
-    if (candidate.kind === 'active-skill') {
+    if (candidate.kind === 'passive-slot') {
+      if (this.playerPassives.expandSlots() <= 0) return;
+    } else if (candidate.kind === 'active-skill') {
       const result = this.playerSkills.learnSkill(candidate.skillId, this.gameplayTime);
       if (result.status === 'requires-forget') {
         this.rewardChoices.beginResolution({

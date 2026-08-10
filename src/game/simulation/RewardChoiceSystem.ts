@@ -7,6 +7,7 @@ import {
 } from '../content/skills/passiveSkillDefinitions';
 import type { PassiveSkillId } from '../content/skills/passiveSkillDefinitions';
 import type { LearnedPlayerSkill } from './PlayerSkillSystem';
+import { MAX_PASSIVE_SLOT_COUNT } from './PlayerPassiveSystem';
 import type { PassiveSkillSlot } from './PlayerPassiveSystem';
 
 export const REWARD_CANDIDATE_COUNT = 3;
@@ -32,7 +33,14 @@ export interface PassiveSkillRewardCandidate extends RewardCandidateBase {
   skillId: PassiveSkillId;
 }
 
-export type RewardCandidate = ActiveSkillRewardCandidate | PassiveSkillRewardCandidate;
+export interface PassiveSlotRewardCandidate extends RewardCandidateBase {
+  kind: 'passive-slot';
+}
+
+export type RewardCandidate =
+  | ActiveSkillRewardCandidate
+  | PassiveSkillRewardCandidate
+  | PassiveSlotRewardCandidate;
 
 export interface RewardChoice {
   id: number;
@@ -161,7 +169,9 @@ export class RewardChoiceSystem {
 
     if (source === 'level-up' || source === 'boss') {
       this.takeRandom(
-        pool.filter(candidate => candidate.operation === 'upgrade'),
+        pool.filter(candidate => (
+          candidate.kind !== 'passive-slot' && candidate.operation === 'upgrade'
+        )),
         pool,
         selected,
       );
@@ -229,6 +239,20 @@ export class RewardChoiceSystem {
       });
     }
 
+    if (
+      (source === 'boss' || source === 'post-max')
+      && context.passiveSkills.length < MAX_PASSIVE_SLOT_COUNT
+    ) {
+      candidates.push({
+        id: `passive-slot:${context.passiveSkills.length + 1}`,
+        kind: 'passive-slot',
+        operation: 'upgrade',
+        currentLevel: context.passiveSkills.length,
+        nextLevel: context.passiveSkills.length + 1,
+        maxLevel: MAX_PASSIVE_SLOT_COUNT,
+      });
+    }
+
     return candidates;
   }
 
@@ -269,6 +293,7 @@ export class RewardChoiceSystem {
 }
 
 function getCandidateWeight(candidate: RewardCandidate, source: RewardSource) {
+  if (candidate.kind === 'passive-slot') return source === 'boss' ? 2.4 : 1.6;
   if (source === 'elite-core') return candidate.operation === 'upgrade' ? 4 : 1.5;
   if (source === 'post-max') return candidate.operation === 'upgrade' ? 2 : 1;
   if (source === 'boss') {

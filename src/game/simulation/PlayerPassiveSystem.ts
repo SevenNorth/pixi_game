@@ -2,6 +2,7 @@ import { passiveSkillDefinitions } from '../content/skills/passiveSkillDefinitio
 import type { PassiveSkillId } from '../content/skills/passiveSkillDefinitions';
 
 export const INITIAL_PASSIVE_SLOT_COUNT = 4;
+export const MAX_PASSIVE_SLOT_COUNT = 6;
 
 export interface PassiveSkillSlot {
   id: PassiveSkillId;
@@ -22,6 +23,13 @@ export class PlayerPassiveSystem {
 
   reset() {
     this.slots = Array.from({ length: INITIAL_PASSIVE_SLOT_COUNT }, () => null);
+  }
+
+  expandSlots(count = 1) {
+    const available = MAX_PASSIVE_SLOT_COUNT - this.slots.length;
+    const added = Math.min(available, Math.max(0, Math.floor(count)));
+    for (let index = 0; index < added; index += 1) this.slots.push(null);
+    return added;
   }
 
   acquire(

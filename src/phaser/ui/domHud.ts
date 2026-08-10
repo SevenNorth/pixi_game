@@ -37,6 +37,7 @@ let levelUp: HTMLElement;
 let skillDock: HTMLElement;
 let activeSkillSlots: HTMLElement[];
 let passiveSkillSlots: HTMLElement[];
+let passiveSkillSlotsRoot: HTMLElement;
 let rewardChoice: HTMLElement;
 let rewardChoiceSource: HTMLElement;
 let rewardChoicePending: HTMLElement;
@@ -138,6 +139,7 @@ export function initDomHud(container: HTMLElement) {
   skillDock = root.querySelector('#skill-dock') as HTMLElement;
   activeSkillSlots = Array.from(root.querySelectorAll('.active-skill-slot'));
   passiveSkillSlots = Array.from(root.querySelectorAll('.passive-skill-slot'));
+  passiveSkillSlotsRoot = root.querySelector('#passive-skill-slots') as HTMLElement;
   rewardChoice = root.querySelector('#reward-choice') as HTMLElement;
   rewardChoiceSource = root.querySelector('#reward-choice-source') as HTMLElement;
   rewardChoicePending = root.querySelector('#reward-choice-pending') as HTMLElement;
@@ -368,7 +370,7 @@ function createRewardOption(candidate: RewardCandidate, index: number) {
   button.type = 'button';
   button.className = 'reward-option';
   button.dataset.kind = candidate.kind;
-  button.dataset.skill = candidate.skillId;
+  button.dataset.skill = candidate.kind === 'passive-slot' ? 'passive-slot' : candidate.skillId;
   button.innerHTML = `
     <span class="reward-option-key">${key}</span>
     <span class="reward-option-type">${t(
@@ -391,12 +393,14 @@ function createRewardOption(candidate: RewardCandidate, index: number) {
 }
 
 function getRewardCandidateName(candidate: RewardCandidate) {
+  if (candidate.kind === 'passive-slot') return t('passiveSlotExpansion');
   return candidate.kind === 'active-skill'
     ? t(playerSkillNameKeys[candidate.skillId])
     : t(passiveSkillNameKeys[candidate.skillId]);
 }
 
 function getRewardCandidateEffect(candidate: RewardCandidate) {
+  if (candidate.kind === 'passive-slot') return t('passiveSlotExpansionEffect');
   if (candidate.kind === 'passive-skill') {
     const definition = passiveSkillDefinitions[candidate.skillId];
     const value = definition.valuePerLevel;
@@ -579,6 +583,7 @@ export function updateSkillSlots(slots: Array<PlayerSkillSlotState | null>) {
 }
 
 export function updatePassiveSkills(slots: Array<PassiveSkillSlot | null>) {
+  ensurePassiveSkillSlotElements(slots.length);
   passiveSkillSlots.forEach((element, index) => {
     const slot = slots[index] ?? null;
     const level = element.querySelector('.passive-skill-level') as HTMLElement;
@@ -590,6 +595,23 @@ export function updatePassiveSkills(slots: Array<PassiveSkillSlot | null>) {
       slot ? `${t(passiveSkillNameKeys[slot.id])} Lv.${slot.level}` : t('emptySkill'),
     );
   });
+}
+
+function ensurePassiveSkillSlotElements(count: number) {
+  while (passiveSkillSlots.length < count) {
+    const element = document.createElement('div');
+    element.className = 'passive-skill-slot';
+    element.dataset.empty = 'true';
+    element.innerHTML = `
+      <span class="passive-skill-icon"></span>
+      <span class="passive-skill-level"></span>
+    `;
+    passiveSkillSlotsRoot.append(element);
+    passiveSkillSlots.push(element);
+  }
+  while (passiveSkillSlots.length > count) {
+    passiveSkillSlots.pop()?.remove();
+  }
 }
 
 function renderPips(container: HTMLElement, value: number, max: number, type: 'hp' | 'shield') {
