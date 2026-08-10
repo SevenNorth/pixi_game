@@ -38,6 +38,7 @@ import type { CardinalDirection, PlayerDirectionState } from '../../game/simulat
 import { PlayerPassiveSystem } from '../../game/simulation/PlayerPassiveSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
 import { RewardChoiceSystem } from '../../game/simulation/RewardChoiceSystem';
+import type { RewardCandidate } from '../../game/simulation/RewardChoiceSystem';
 import { getRewardProfile, scalePlayerExperience } from '../../game/simulation/RewardScaling';
 import { PlayerSkillSystem } from '../../game/simulation/PlayerSkillSystem';
 import type { PlayerSkillRuntimeEvent } from '../../game/simulation/PlayerSkillSystem';
@@ -55,11 +56,13 @@ import { PhaserInputController } from '../input/PhaserInputController';
 import {
   hideLevelUp,
   hideMenu,
+  hideRewardChoice,
   showHud,
   showBossAppeared,
   showLevelUp,
   showMapLevelUp,
   showMenu,
+  showRewardChoice,
   updateHud,
   updateMapProgression,
   updatePassiveSkills,
@@ -132,6 +135,7 @@ export class GameScene extends Phaser.Scene {
   private foodId = 0;
   private ended = false;
   private paused = false;
+  private rewardPauseActive = false;
   private lastShotAt = -Infinity;
   private gameplayTime = 0;
   private playerAttack = 1;
@@ -159,6 +163,7 @@ export class GameScene extends Phaser.Scene {
     this.preserveMapProgressionOnRestart = false;
     this.ended = false;
     this.paused = false;
+    this.rewardPauseActive = false;
     this.killed = 0;
     this.gameplayTime = 0;
     this.lastShotAt = -Infinity;
@@ -176,7 +181,9 @@ export class GameScene extends Phaser.Scene {
     this.playerAttack = attackForLevel(this.progression.state.level);
     hideMenu();
     hideLevelUp();
+    hideRewardChoice();
     window.addEventListener('restart-game', this.restart, { once: true });
+    window.addEventListener('reward-choice-selected', this.onRewardChoiceSelected);
     showHud();
     updateHud(this.killed);
     this.updateMapProgressionHud();
@@ -248,27 +255,26 @@ export class GameScene extends Phaser.Scene {
   shutdown() {
     this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     window.removeEventListener('restart-game', this.restart);
+    window.removeEventListener('reward-choice-selected', this.onRewardChoiceSelected);
+    hideRewardChoice();
   }
 
   update(_time: number, delta: number) {
     const inputFrame = this.inputController.readFrame();
+    if (this.rewardChoices.state.active) {
+      const selectedIndex = [
+        inputFrame.skillPressed['skill-1'],
+        inputFrame.skillPressed['skill-2'],
+        inputFrame.skillPressed['skill-3'],
+      ].findIndex(Boolean);
+      if (selectedIndex >= 0) this.selectRewardByIndex(selectedIndex);
+      return;
+    }
     if (inputFrame.pausePressed && !this.ended) this.togglePause();
     if (inputFrame.restartPressed) this.restart();
     if (this.ended || this.paused) return;
     this.gameplayTime += Math.min(delta, 50);
-    const passiveModifiers = this.playerPassives.getModifiers();
-    if (passiveModifiers.maxShieldBonus !== this.appliedPassiveMaxShieldBonus) {
-      this.vitals.adjustMaxShield(
-        passiveModifiers.maxShieldBonus - this.appliedPassiveMaxShieldBonus,
-      );
-      this.appliedPassiveMaxShieldBonus = passiveModifiers.maxShieldBonus;
-      updateVitals(
-        this.vitals.state.hp,
-        this.vitals.state.maxHp,
-        this.vitals.state.shield,
-        this.vitals.state.maxShield,
-      );
-    }
+    const passiveModifiers = this.syncPassiveModifiers();
     this.playerSkills.setCooldownMultiplier(passiveModifiers.cooldownMultiplier);
     const speed = 180 * passiveModifiers.moveSpeedMultiplier;
     const body = this.player.body as Phaser.Physics.Arcade.Body;
@@ -391,7 +397,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.foods.children.each(child => {
       const food = child as FoodSprite;
-      if (this.time.now > food.expiresAt) food.destroy();
+      if (this.gameplayTime > food.expiresAt) food.destroy();
       return null;
     });
     updateBossOffscreenIndicator(
@@ -714,7 +720,7 @@ export class GameScene extends Phaser.Scene {
     const food = this.physics.add.image(point.x, point.y, foodKeys[index]) as FoodSprite;
     food.foodId = `food-${this.foodId++}`;
     food.foodKey = foodKeys[index];
-    food.expiresAt = this.time.now + 9000;
+    food.expiresAt = this.gameplayTime + 9000;
     this.foods.add(food);
   }
 
@@ -1079,7 +1085,77 @@ export class GameScene extends Phaser.Scene {
       this.vitals.state.maxShield,
     );
     showLevelUp(this.progression.state.level, levelUps);
+    this.presentNextRewardChoice();
   };
+
+  private presentNextRewardChoice() {
+    const choice = this.rewardChoices.activateNext({
+      activeSkills: this.playerSkills.state.learned,
+      passiveSkills: this.playerPassives.slots,
+    });
+    if (!choice) {
+      hideRewardChoice();
+      if (this.rewardPauseActive) {
+        this.rewardPauseActive = false;
+        this.setGamePaused(false);
+      }
+      return;
+    }
+
+    if (!this.rewardPauseActive) {
+      this.rewardPauseActive = true;
+      this.setGamePaused(true);
+    }
+    showRewardChoice(choice, this.rewardChoices.state.pending.length + 1);
+  }
+
+  private onRewardChoiceSelected = (event: Event) => {
+    const candidateId = (event as CustomEvent<{ candidateId?: string }>).detail?.candidateId;
+    if (candidateId) this.selectReward(candidateId);
+  };
+
+  private selectRewardByIndex(index: number) {
+    const candidate = this.rewardChoices.state.active?.candidates[index];
+    if (candidate) this.selectReward(candidate.id);
+  }
+
+  private selectReward(candidateId: string) {
+    const candidate = this.rewardChoices.state.active?.candidates.find(
+      item => item.id === candidateId,
+    );
+    if (!candidate || !this.applyRewardCandidate(candidate)) return;
+    this.rewardChoices.select(candidateId);
+    updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
+    updatePassiveSkills(this.playerPassives.slots);
+    this.syncPassiveModifiers();
+    this.presentNextRewardChoice();
+  }
+
+  private applyRewardCandidate(candidate: RewardCandidate) {
+    if (candidate.kind === 'active-skill') {
+      const result = this.playerSkills.learnSkill(candidate.skillId, this.gameplayTime);
+      return result.status === 'learned' || result.status === 'upgraded';
+    }
+    const result = this.playerPassives.acquire(candidate.skillId);
+    return result.status === 'learned' || result.status === 'upgraded';
+  }
+
+  private syncPassiveModifiers() {
+    const passiveModifiers = this.playerPassives.getModifiers();
+    if (passiveModifiers.maxShieldBonus !== this.appliedPassiveMaxShieldBonus) {
+      this.vitals.adjustMaxShield(
+        passiveModifiers.maxShieldBonus - this.appliedPassiveMaxShieldBonus,
+      );
+      this.appliedPassiveMaxShieldBonus = passiveModifiers.maxShieldBonus;
+      updateVitals(
+        this.vitals.state.hp,
+        this.vitals.state.maxHp,
+        this.vitals.state.shield,
+        this.vitals.state.maxShield,
+      );
+    }
+    return passiveModifiers;
+  }
 
   private onFoodEat: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (playerObject, foodObject) => {
     const food = foodObject as unknown as FoodSprite;
@@ -1163,7 +1239,7 @@ export class GameScene extends Phaser.Scene {
   };
 
   private togglePause() {
-    if (this.ended) return;
+    if (this.ended || this.rewardPauseActive) return;
     this.setGamePaused(!this.paused);
   }
 

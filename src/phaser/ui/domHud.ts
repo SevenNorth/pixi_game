@@ -6,6 +6,16 @@ import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinit
 import type { PassiveSkillSlot } from '../../game/simulation/PlayerPassiveSystem';
 import type { PlayerSkillSlotState } from '../../game/simulation/PlayerSkillSystem';
 import type { MapProgressionStatus } from '../../game/simulation/MapProgression';
+import type {
+  RewardCandidate,
+  RewardChoice,
+  RewardSource,
+} from '../../game/simulation/RewardChoiceSystem';
+import {
+  getPlayerSkillDefinition,
+  getShieldPoints,
+} from '../../game/content/skills/playerSkillDefinitions';
+import { passiveSkillDefinitions } from '../../game/content/skills/passiveSkillDefinitions';
 
 let root: HTMLElement;
 let hud: HTMLElement;
@@ -24,6 +34,10 @@ let levelUp: HTMLElement;
 let skillDock: HTMLElement;
 let activeSkillSlots: HTMLElement[];
 let passiveSkillSlots: HTMLElement[];
+let rewardChoice: HTMLElement;
+let rewardChoiceSource: HTMLElement;
+let rewardChoicePending: HTMLElement;
+let rewardChoiceOptions: HTMLElement;
 let levelUpTimer: number | undefined;
 let noticeActive = false;
 const noticeQueue: Array<{ kicker: string; title: string }> = [];
@@ -72,6 +86,18 @@ export function initDomHud(container: HTMLElement) {
         <div id="level-up-title" class="level-up-title">${t('maxHpAdded', { amount: 1 })}</div>
       </div>
     </div>
+    <div id="reward-choice" class="reward-choice" role="dialog" aria-modal="true" aria-labelledby="reward-choice-title" hidden>
+      <div class="reward-choice-panel">
+        <div class="reward-choice-header">
+          <div>
+            <div id="reward-choice-source" class="reward-choice-source"></div>
+            <div id="reward-choice-title" class="reward-choice-title">${t('rewardChoiceTitle')}</div>
+          </div>
+          <div id="reward-choice-pending" class="reward-choice-pending"></div>
+        </div>
+        <div id="reward-choice-options" class="reward-choice-options"></div>
+      </div>
+    </div>
     <div id="skill-dock" class="skill-dock" hidden>
       <div id="passive-skill-slots" class="passive-skill-slots" aria-label="Passive skills">
         ${Array.from({ length: 4 }, () => `
@@ -110,6 +136,10 @@ export function initDomHud(container: HTMLElement) {
   skillDock = root.querySelector('#skill-dock') as HTMLElement;
   activeSkillSlots = Array.from(root.querySelectorAll('.active-skill-slot'));
   passiveSkillSlots = Array.from(root.querySelectorAll('.passive-skill-slot'));
+  rewardChoice = root.querySelector('#reward-choice') as HTMLElement;
+  rewardChoiceSource = root.querySelector('#reward-choice-source') as HTMLElement;
+  rewardChoicePending = root.querySelector('#reward-choice-pending') as HTMLElement;
+  rewardChoiceOptions = root.querySelector('#reward-choice-options') as HTMLElement;
   const startButton = root.querySelector('#start-game') as HTMLButtonElement;
   const restartButton = root.querySelector('#restart-game') as HTMLButtonElement;
   startButton.style.backgroundImage = `url(${getAssetUrl('start')})`;
@@ -159,6 +189,96 @@ export function hideLevelUp() {
   noticeQueue.length = 0;
   noticeActive = false;
   levelUp.hidden = true;
+}
+
+const rewardSourceKeys: Record<RewardSource, MessageKey> = {
+  'level-up': 'rewardSourceLevelUp',
+  'elite-core': 'rewardSourceEliteCore',
+  boss: 'rewardSourceBoss',
+  'post-max': 'rewardSourcePostMax',
+};
+
+export function showRewardChoice(choice: RewardChoice, pendingCount: number) {
+  rewardChoiceSource.textContent = t(rewardSourceKeys[choice.source]);
+  rewardChoicePending.textContent = t('rewardChoicePending', { count: pendingCount });
+  rewardChoiceOptions.replaceChildren(
+    ...choice.candidates.map((candidate, index) => createRewardOption(candidate, index)),
+  );
+  rewardChoice.hidden = false;
+  (rewardChoiceOptions.querySelector('.reward-option') as HTMLButtonElement | null)?.focus();
+}
+
+export function hideRewardChoice() {
+  rewardChoice.hidden = true;
+  rewardChoiceOptions.replaceChildren();
+}
+
+function createRewardOption(candidate: RewardCandidate, index: number) {
+  const key = index + 1;
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'reward-option';
+  button.dataset.kind = candidate.kind;
+  button.dataset.skill = candidate.skillId;
+  button.innerHTML = `
+    <span class="reward-option-key">${key}</span>
+    <span class="reward-option-type">${t(
+      candidate.operation === 'learn' ? 'rewardLearn' : 'rewardUpgrade',
+    )}</span>
+    <span class="reward-option-name">${getRewardCandidateName(candidate)}</span>
+    <span class="reward-option-level">${t('rewardLevelChange', {
+      current: candidate.currentLevel,
+      next: candidate.nextLevel,
+    })}</span>
+    <span class="reward-option-effect">${getRewardCandidateEffect(candidate)}</span>
+    <span class="reward-option-hint">${t('rewardKeyHint', { key })}</span>
+  `;
+  button.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('reward-choice-selected', {
+      detail: { candidateId: candidate.id },
+    }));
+  });
+  return button;
+}
+
+function getRewardCandidateName(candidate: RewardCandidate) {
+  return candidate.kind === 'active-skill'
+    ? t(playerSkillNameKeys[candidate.skillId])
+    : t(passiveSkillNameKeys[candidate.skillId]);
+}
+
+function getRewardCandidateEffect(candidate: RewardCandidate) {
+  if (candidate.kind === 'passive-skill') {
+    const definition = passiveSkillDefinitions[candidate.skillId];
+    const value = definition.valuePerLevel;
+    if (definition.modifier === 'attack') return t('rewardAttackEffect', { value });
+    if (definition.modifier === 'maxShield') {
+      return t('rewardShieldCapacityEffect', { value });
+    }
+    if (definition.modifier === 'moveSpeed') {
+      return t('rewardMoveSpeedEffect', { value: Math.round(value * 100) });
+    }
+    return t('rewardCooldownEffect', { value: Math.round(value * 100) });
+  }
+
+  const definition = getPlayerSkillDefinition(candidate.skillId, candidate.nextLevel);
+  if (candidate.skillId === 'lightning-bolt') {
+    return t('rewardLightningEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      range: definition.range,
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  if (candidate.skillId === 'thunder-dash') {
+    return t('rewardDashEffect', {
+      range: definition.range,
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  return t('rewardShieldEffect', {
+    points: getShieldPoints(candidate.skillId, candidate.nextLevel),
+    cooldown: (definition.cooldownMs / 1000).toFixed(2),
+  });
 }
 
 function enqueueNotice(kicker: string, title: string) {
