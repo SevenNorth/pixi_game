@@ -168,6 +168,7 @@ export class GameScene extends Phaser.Scene {
   private ended = false;
   private paused = false;
   private rewardPauseActive = false;
+  private bossDefeatCinematicActive = false;
   private skillLoadoutOpen = false;
   private skillLoadoutWasPaused = false;
   private selectedLoadoutSkillId: PlayerSkillId | null = null;
@@ -204,6 +205,7 @@ export class GameScene extends Phaser.Scene {
     this.ended = false;
     this.paused = false;
     this.rewardPauseActive = false;
+    this.bossDefeatCinematicActive = false;
     this.skillLoadoutOpen = false;
     this.skillLoadoutWasPaused = false;
     this.selectedLoadoutSkillId = null;
@@ -317,6 +319,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number) {
     const inputFrame = this.inputController.readFrame();
+    if (this.bossDefeatCinematicActive) return;
     if (this.rewardChoices.state.active) return;
     if (this.skillLoadoutOpen) {
       if (inputFrame.loadoutPressed) this.closeSkillLoadout();
@@ -951,7 +954,7 @@ export class GameScene extends Phaser.Scene {
       callback: this.spawnMonster,
       callbackScope: this,
     });
-    this.monsterTimer.paused = this.paused;
+    this.monsterTimer.paused = this.paused || this.bossDefeatCinematicActive;
   }
 
   private syncWorldChunks() {
@@ -1274,18 +1277,20 @@ export class GameScene extends Phaser.Scene {
     monster.warningView?.destroy();
     monster.warningView = undefined;
     monster.healthBar.destroy();
-    playMonsterDefeat(this, monster);
+    const isBoss = monster.combat.kind === 'boss';
+    if (isBoss) this.startBossDefeatCinematic();
     this.killed += 1;
     const rewardProfile = getRewardProfile(
       this.progression.state.level,
       this.mapProgression.state.level,
     );
     const wasMaxLevel = this.progression.state.level >= this.progression.state.maxLevel;
-    if (monster.combat.kind === 'boss') {
+    let mapLevelAdvanced = false;
+    if (isBoss) {
       if (this.mapProgression.completeBoss()) {
+        mapLevelAdvanced = true;
         this.spawnDirector.syncMapLevel(this.mapProgression.state.level);
         this.resetMonsterSpawnTimer();
-        showMapLevelUp(this.mapProgression.state.level);
         this.rewardChoices.enqueue('boss');
       }
     } else {
@@ -1312,7 +1317,17 @@ export class GameScene extends Phaser.Scene {
     }
     updateHud(this.killed);
     this.updatePlayerProgressionHud();
-    this.presentNextRewardChoice();
+    if (isBoss) {
+      const defeatColor = monster.combat.bossVariant === 'dragon-green' ? 0x70e56f : 0xb767ff;
+      playMonsterDefeat(this, monster, {
+        color: defeatColor,
+        durationMs: 650,
+        onComplete: () => this.finishBossDefeatCinematic(mapLevelAdvanced),
+      });
+    } else {
+      playMonsterDefeat(this, monster);
+      this.presentNextRewardChoice();
+    }
   }
 
   private updatePlayerProgressionHud() {
@@ -1377,6 +1392,7 @@ export class GameScene extends Phaser.Scene {
   };
 
   private presentNextRewardChoice() {
+    if (this.bossDefeatCinematicActive) return;
     const choice = this.rewardChoices.activateNext({
       activeSkills: this.playerSkills.state.learned,
       passiveSkills: this.playerPassives.slots,
@@ -1861,5 +1877,20 @@ export class GameScene extends Phaser.Scene {
       this.tweens.resumeAll();
       this.anims.resumeAll();
     }
+  }
+
+  private startBossDefeatCinematic() {
+    this.bossDefeatCinematicActive = true;
+    this.physics.pause();
+    if (this.monsterTimer) this.monsterTimer.paused = true;
+    if (this.foodTimer) this.foodTimer.paused = true;
+  }
+
+  private finishBossDefeatCinematic(mapLevelAdvanced: boolean) {
+    if (!this.bossDefeatCinematicActive || this.ended) return;
+    this.bossDefeatCinematicActive = false;
+    this.setGamePaused(false);
+    if (mapLevelAdvanced) showMapLevelUp(this.mapProgression.state.level);
+    this.presentNextRewardChoice();
   }
 }
