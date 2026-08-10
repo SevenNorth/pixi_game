@@ -495,14 +495,26 @@ export function updateVitals(hp: number, maxHp: number, shield: number, maxShiel
   renderPips(shieldPips, shield, maxShield, 'shield');
 }
 
-export function updateProgression(levelNumber: number, experience: number, experienceToNext: number) {
+export function updateProgression(
+  levelNumber: number,
+  experience: number,
+  experienceToNext: number,
+  maxLevel = Number.POSITIVE_INFINITY,
+  postMaxKills = 0,
+  postMaxKillsToNext = 0,
+) {
   level.textContent = t('level', { level: levelNumber });
-  const progress = experienceToNext > 0 ? Math.min(1, experience / experienceToNext) : 1;
+  const atMaxLevel = levelNumber >= maxLevel;
+  const progress = atMaxLevel
+    ? postMaxKillsToNext > 0 ? Math.min(1, postMaxKills / postMaxKillsToNext) : 0
+    : experienceToNext > 0 ? Math.min(1, experience / experienceToNext) : 1;
   experienceBar.style.width = `${progress * 100}%`;
-  experienceLabel.textContent = t('experienceValue', {
-    experience: formatProgressValue(experience),
-    next: formatProgressValue(experienceToNext),
-  });
+  experienceLabel.textContent = atMaxLevel
+    ? t('postMaxProgressValue', { kills: postMaxKills, next: postMaxKillsToNext })
+    : t('experienceValue', {
+      experience: formatProgressValue(experience),
+      next: formatProgressValue(experienceToNext),
+    });
 }
 
 export function updateMapLevel(levelNumber: number) {

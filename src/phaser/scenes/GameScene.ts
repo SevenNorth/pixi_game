@@ -37,8 +37,13 @@ import {
 import type { CardinalDirection, PlayerDirectionState } from '../../game/simulation/PlayerMovement';
 import { PlayerPassiveSystem } from '../../game/simulation/PlayerPassiveSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
+import { PostMaxProgression } from '../../game/simulation/PostMaxProgression';
 import { RewardChoiceSystem } from '../../game/simulation/RewardChoiceSystem';
-import { getRewardProfile, scalePlayerExperience } from '../../game/simulation/RewardScaling';
+import {
+  getRewardProfile,
+  rollEliteCoreDrop,
+  scalePlayerExperience,
+} from '../../game/simulation/RewardScaling';
 import { PlayerSkillSystem } from '../../game/simulation/PlayerSkillSystem';
 import type {
   ActiveSkillSlotIndex,
@@ -158,6 +163,7 @@ export class GameScene extends Phaser.Scene {
   private playerDirection: PlayerDirectionState = createPlayerDirectionState();
   private vitals = new PlayerVitals();
   private progression = new PlayerProgression();
+  private postMaxProgression = new PostMaxProgression();
   private playerSkills = new PlayerSkillSystem();
   private playerPassives = new PlayerPassiveSystem();
   private rewardChoices = new RewardChoiceSystem();
@@ -190,6 +196,7 @@ export class GameScene extends Phaser.Scene {
     this.playerDirection = createPlayerDirectionState();
     this.vitals.reset();
     this.progression.reset();
+    this.postMaxProgression.reset();
     this.playerSkills.reset(this.gameplayTime);
     this.playerPassives.reset();
     this.rewardChoices.reset(Phaser.Math.RND.integerInRange(1, 0x7fffffff));
@@ -215,11 +222,7 @@ export class GameScene extends Phaser.Scene {
       this.vitals.state.shield,
       this.vitals.state.maxShield,
     );
-    updateProgression(
-      this.progression.state.level,
-      this.progression.state.experience,
-      this.progression.state.experienceToNext,
-    );
+    this.updatePlayerProgressionHud();
     updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
     updatePassiveSkills(this.playerPassives.slots);
 
@@ -1188,12 +1191,20 @@ export class GameScene extends Phaser.Scene {
       this.progression.state.level,
       this.mapProgression.state.level,
     );
+    const wasMaxLevel = this.progression.state.level >= this.progression.state.maxLevel;
     if (monster.combat.kind === 'boss') {
       if (this.mapProgression.completeBoss()) {
         showMapLevelUp(this.mapProgression.state.level);
+        this.rewardChoices.enqueue('boss');
       }
     } else {
       this.mapProgression.gainKillExperience(monster.combat.level);
+    }
+    if (
+      monster.combat.kind === 'elite'
+      && rollEliteCoreDrop(rewardProfile, Phaser.Math.RND.frac())
+    ) {
+      this.rewardChoices.enqueue('elite-core');
     }
     this.updateMapProgressionHud();
     const playerExperience = scalePlayerExperience(
@@ -1201,13 +1212,27 @@ export class GameScene extends Phaser.Scene {
       rewardProfile.playerExperienceMultiplier,
     );
     const experienceResult = this.progression.gainExperience(playerExperience);
+    if (experienceResult.levelUps > 0) this.handleLevelUp(experienceResult.levelUps);
+    if (wasMaxLevel && monster.combat.kind !== 'boss') {
+      const postMaxResult = this.postMaxProgression.recordKills();
+      if (postMaxResult.rewardsEarned > 0) {
+        this.rewardChoices.enqueue('post-max', postMaxResult.rewardsEarned);
+      }
+    }
     updateHud(this.killed);
+    this.updatePlayerProgressionHud();
+    this.presentNextRewardChoice();
+  }
+
+  private updatePlayerProgressionHud() {
     updateProgression(
       this.progression.state.level,
       this.progression.state.experience,
       this.progression.state.experienceToNext,
+      this.progression.state.maxLevel,
+      this.postMaxProgression.state.kills,
+      this.postMaxProgression.state.killsToNext,
     );
-    if (experienceResult.levelUps > 0) this.handleLevelUp(experienceResult.levelUps);
   }
 
   private updateMapProgressionHud() {
@@ -1258,7 +1283,6 @@ export class GameScene extends Phaser.Scene {
       this.vitals.state.maxShield,
     );
     showLevelUp(this.progression.state.level, levelUps);
-    this.presentNextRewardChoice();
   };
 
   private presentNextRewardChoice() {

@@ -54,6 +54,15 @@ export function scalePlayerExperience(baseExperience: number, multiplier: number
   return Math.round(Math.max(0, baseExperience) * Math.max(0, multiplier) * 100) / 100;
 }
 
+export function getEliteCoreDropChance(profile: RewardProfile) {
+  const tierChance = 0.2 + (profile.effectiveTier - 1) * 0.04;
+  return Math.min(0.5, Math.max(0.02, tierChance * profile.highQualityChanceMultiplier));
+}
+
+export function rollEliteCoreDrop(profile: RewardProfile, roll: number) {
+  return Math.max(0, Math.min(1, roll)) < getEliteCoreDropChance(profile);
+}
+
 export function getMapRewardTier(mapLevel: number): RewardTier {
   return clampRewardTier(Math.ceil(Math.max(1, mapLevel) / 2));
 }
