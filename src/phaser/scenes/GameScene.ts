@@ -31,6 +31,7 @@ import type { MonsterCombatState } from '../../game/simulation/MonsterCombat';
 import {
   createPlayerDirectionState,
   resolveCardinalDirection,
+  updatePlayerFacing,
   updatePlayerDirection,
 } from '../../game/simulation/PlayerMovement';
 import type { CardinalDirection, PlayerDirectionState } from '../../game/simulation/PlayerMovement';
@@ -79,6 +80,11 @@ import {
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
+import {
+  createPlayerShieldView,
+  updatePlayerShieldView,
+} from '../view/fx/PlayerShieldView';
+import type { PlayerShieldView } from '../view/fx/PlayerShieldView';
 import { playEnemySkillImpact, playEnemyWarning } from '../view/fx/playEnemyWarning';
 import {
   playLightningSkillCast,
@@ -145,6 +151,8 @@ export class GameScene extends Phaser.Scene {
   private rewardPauseActive = false;
   private suppressCombatInputFrames = 0;
   private lastShotAt = -Infinity;
+  private lockedTargetId: string | null = null;
+  private currentTargetId: string | null = null;
   private gameplayTime = 0;
   private playerAttack = 1;
   private playerDirection: PlayerDirectionState = createPlayerDirectionState();
@@ -160,6 +168,7 @@ export class GameScene extends Phaser.Scene {
   private damageTween?: Phaser.Tweens.Tween;
   private preserveMapProgressionOnRestart = false;
   private bossIndicator!: BossOffscreenIndicator;
+  private playerShieldView!: PlayerShieldView;
   private spawnDirector = new MonsterSpawnDirector();
 
   constructor() {
@@ -176,6 +185,8 @@ export class GameScene extends Phaser.Scene {
     this.killed = 0;
     this.gameplayTime = 0;
     this.lastShotAt = -Infinity;
+    this.lockedTargetId = null;
+    this.currentTargetId = null;
     this.playerDirection = createPlayerDirectionState();
     this.vitals.reset();
     this.progression.reset();
@@ -219,6 +230,8 @@ export class GameScene extends Phaser.Scene {
       WORLD_RUNTIME_HALF_EXTENT * 2,
     );
     this.inputController = new PhaserInputController(this.input.keyboard!);
+    this.input.on(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
+    this.input.on(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
     this.events.on(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
 
@@ -227,6 +240,7 @@ export class GameScene extends Phaser.Scene {
     this.player.setCollideWorldBounds(true);
     this.player.setSize(34, 40).setOffset(7, 6);
     this.player.play('player-down');
+    this.playerShieldView = createPlayerShieldView(this);
 
     this.monsters = this.physics.add.group();
     this.foods = this.physics.add.group();
@@ -265,6 +279,8 @@ export class GameScene extends Phaser.Scene {
 
   shutdown() {
     this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
+    this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
+    this.input.off(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
     window.removeEventListener('restart-game', this.restart);
     window.removeEventListener('reward-choice-selected', this.onRewardChoiceSelected);
     window.removeEventListener('reward-resolution-action', this.onRewardResolutionAction);
@@ -299,6 +315,7 @@ export class GameScene extends Phaser.Scene {
     } else if (this.player.anims.isPlaying && !this.player.anims.isPaused) {
       this.player.anims.pause();
     }
+    this.handleAutoAttack();
     if (inputFrame.basicAttackHeld) this.handleShoot();
     (Object.entries(inputFrame.skillPressed) as Array<
       [keyof typeof inputFrame.skillPressed, boolean]
@@ -309,6 +326,14 @@ export class GameScene extends Phaser.Scene {
     });
     this.handlePlayerSkillEvents(this.playerSkills.update(this.gameplayTime));
     this.updatePlayerSkillPresentation();
+    updatePlayerShieldView(
+      this.playerShieldView,
+      this.player.x,
+      this.player.y,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+      delta,
+    );
     updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
     this.monsters.children.each(child => {
       const monster = child as MonsterSprite;
@@ -423,7 +448,96 @@ export class GameScene extends Phaser.Scene {
       this.gameplayTime - this.lastShotAt < 500
     ) return;
     this.lastShotAt = this.gameplayTime;
-    this.shoot();
+    this.shoot(this.playerDirection.facingVector);
+  }
+
+  private handleAutoAttack() {
+    const target = this.resolveAutoAttackTarget();
+    if (!target || this.gameplayTime - this.lastShotAt < 500) return;
+    this.lastShotAt = this.gameplayTime;
+    this.shoot({
+      x: target.x - this.player.x,
+      y: target.y - this.player.y,
+    });
+  }
+
+  private resolveAutoAttackTarget() {
+    const range = 520;
+    const locked = this.lockedTargetId
+      ? this.findActiveMonster(this.lockedTargetId)
+      : undefined;
+    if (locked && Phaser.Math.Distance.Between(this.player.x, this.player.y, locked.x, locked.y) <= range) {
+      this.currentTargetId = locked.monsterId;
+      return locked;
+    }
+    if (this.lockedTargetId) this.lockedTargetId = null;
+
+    const current = this.currentTargetId ? this.findActiveMonster(this.currentTargetId) : undefined;
+    if (current && Phaser.Math.Distance.Between(this.player.x, this.player.y, current.x, current.y) <= range) {
+      return current;
+    }
+
+    let nearest: MonsterSprite | undefined;
+    let nearestDistance = Number.POSITIVE_INFINITY;
+    this.monsters.children.each(child => {
+      const monster = child as MonsterSprite;
+      if (!monster.active || monster.getData('defeated')) return null;
+      const distance = Phaser.Math.Distance.Between(this.player.x, this.player.y, monster.x, monster.y);
+      if (distance <= range && distance < nearestDistance) {
+        nearest = monster;
+        nearestDistance = distance;
+      }
+      return null;
+    });
+    this.currentTargetId = nearest?.monsterId ?? null;
+    return nearest;
+  }
+
+  private findActiveMonster(monsterId: string) {
+    return this.monsters.children.entries
+      .map(child => child as MonsterSprite)
+      .find(monster => monster.active && !monster.getData('defeated') && monster.monsterId === monsterId);
+  }
+
+  private onPointerDown = (pointer: Phaser.Input.Pointer) => {
+    if (this.ended || this.paused || this.rewardChoices.state.active) return;
+    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    const target = this.findMonsterAtPoint(worldPoint.x, worldPoint.y);
+    if (target) {
+      this.lockedTargetId = target.monsterId;
+      this.currentTargetId = target.monsterId;
+      this.updateAim(worldPoint.x, worldPoint.y);
+      return;
+    }
+    this.lockedTargetId = null;
+    this.updateAim(worldPoint.x, worldPoint.y);
+  };
+
+  private onPointerMove = (pointer: Phaser.Input.Pointer) => {
+    if (this.ended || this.paused || this.rewardChoices.state.active) return;
+    const worldPoint = this.cameras.main.getWorldPoint(pointer.x, pointer.y);
+    this.updateAim(worldPoint.x, worldPoint.y);
+  };
+
+  private updateAim(worldX: number, worldY: number) {
+    updatePlayerFacing(this.playerDirection, worldX - this.player.x, worldY - this.player.y);
+  }
+
+  private findMonsterAtPoint(x: number, y: number) {
+    let closest: MonsterSprite | undefined;
+    let closestDistance = Number.POSITIVE_INFINITY;
+    this.monsters.children.each(child => {
+      const monster = child as MonsterSprite;
+      if (!monster.active || monster.getData('defeated')) return null;
+      const hitRadius = Math.max(26, Math.max(monster.displayWidth, monster.displayHeight) * 0.35);
+      const distance = Phaser.Math.Distance.Between(x, y, monster.x, monster.y);
+      if (distance <= hitRadius && distance < closestDistance) {
+        closest = monster;
+        closestDistance = distance;
+      }
+      return null;
+    });
+    return closest;
   }
 
   private handlePlayerSkillEvents(events: PlayerSkillRuntimeEvent[]) {
@@ -589,8 +703,11 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private shoot() {
-    const direction = this.playerDirection.facingVector;
+  private shoot(directionInput = this.playerDirection.facingVector) {
+    const length = Math.hypot(directionInput.x, directionInput.y);
+    const direction = length > 0
+      ? { x: directionInput.x / length, y: directionInput.y / length }
+      : this.playerDirection.facingVector;
     const projectile = createProjectileState({
       id: `projectile-${this.bulletId++}`,
       ownerId: 'player',

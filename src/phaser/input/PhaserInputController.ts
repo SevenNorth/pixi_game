@@ -13,10 +13,13 @@ type InputKey =
   | 'basicAttack'
   | 'skill1Primary'
   | 'skill1Secondary'
+  | 'skill1Tertiary'
   | 'skill2Primary'
   | 'skill2Secondary'
+  | 'skill2Tertiary'
   | 'skill3Primary'
   | 'skill3Secondary'
+  | 'skill3Tertiary'
   | 'pause'
   | 'restart';
 
@@ -35,12 +38,15 @@ export class PhaserInputController {
       s: keyCodes.S,
       d: keyCodes.D,
       basicAttack: keyCodes.SPACE,
-      skill1Primary: keyCodes.J,
-      skill1Secondary: keyCodes.ONE,
-      skill2Primary: keyCodes.K,
-      skill2Secondary: keyCodes.TWO,
-      skill3Primary: keyCodes.L,
-      skill3Secondary: keyCodes.THREE,
+      skill1Primary: keyCodes.Q,
+      skill1Secondary: keyCodes.J,
+      skill1Tertiary: keyCodes.ONE,
+      skill2Primary: keyCodes.E,
+      skill2Secondary: keyCodes.K,
+      skill2Tertiary: keyCodes.TWO,
+      skill3Primary: keyCodes.R,
+      skill3Secondary: keyCodes.L,
+      skill3Tertiary: keyCodes.THREE,
       pause: keyCodes.P,
       restart: keyCodes.R,
     }) as Record<InputKey, Phaser.Input.Keyboard.Key>;
@@ -50,14 +56,17 @@ export class PhaserInputController {
     const skill1Pressed = this.consumePress(
       this.keys.skill1Primary,
       this.keys.skill1Secondary,
+      this.keys.skill1Tertiary,
     );
     const skill2Pressed = this.consumePress(
       this.keys.skill2Primary,
       this.keys.skill2Secondary,
+      this.keys.skill2Tertiary,
     );
     const skill3Pressed = this.consumePress(
       this.keys.skill3Primary,
       this.keys.skill3Secondary,
+      this.keys.skill3Tertiary,
     );
 
     return {

@@ -37,6 +37,19 @@ export function updatePlayerDirection(state: PlayerDirectionState, horizontal: n
   return state;
 }
 
+export function updatePlayerFacing(state: PlayerDirectionState, x: number, y: number) {
+  const length = Math.hypot(x, y);
+  if (length === 0) return state;
+  state.facingVector.x = x / length;
+  state.facingVector.y = y / length;
+  state.animationDirection = resolveCardinalDirection(
+    state.facingVector.x,
+    state.facingVector.y,
+    state.animationDirection,
+  );
+  return state;
+}
+
 export function resolveCardinalDirection(
   x: number,
   y: number,
@@ -54,4 +67,3 @@ export function resolveCardinalDirection(
   }
   return absX > absY ? (x < 0 ? 'left' : 'right') : (y < 0 ? 'up' : 'down');
 }
-

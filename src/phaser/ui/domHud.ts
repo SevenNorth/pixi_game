@@ -60,7 +60,6 @@ export function initDomHud(container: HTMLElement) {
         </div>
       </div>
       <div class="hud-counters">
-        <div id="map-level" class="hud-stat map-level">${t('mapLevel', { level: 1 })}</div>
         <div id="level" class="hud-stat">${t('level', { level: 1 })}</div>
         <div id="killed" class="hud-stat">${t('killed', { killed: 0 })}</div>
       </div>
@@ -69,7 +68,7 @@ export function initDomHud(container: HTMLElement) {
       </div>
       <div id="experience-label" class="experience-label">${t('experienceValue', { experience: 0, next: 3 })}</div>
       <div class="map-progress">
-        <div class="map-progress-title">${t('mapExperience')}</div>
+        <div id="map-level" class="hud-stat map-level">${t('mapLevel', { level: 1 })}</div>
         <div class="experience-track map-experience-track" aria-label="${t('mapExperience')}">
           <span id="map-experience-bar" class="experience-bar map-experience-bar"></span>
         </div>
@@ -111,7 +110,7 @@ export function initDomHud(container: HTMLElement) {
         `).join('')}
       </div>
       <div id="active-skill-slots" class="active-skill-slots">
-        ${['J/1', 'K/2', 'L/3'].map(shortcut => `
+        ${['Q/1', 'E/2', 'R/3'].map(shortcut => `
           <div class="active-skill-slot" data-empty="true" data-phase="ready">
             <span class="skill-cooldown-mask"></span>
             <span class="skill-icon"></span>
@@ -500,7 +499,10 @@ export function updateProgression(levelNumber: number, experience: number, exper
   level.textContent = t('level', { level: levelNumber });
   const progress = experienceToNext > 0 ? Math.min(1, experience / experienceToNext) : 1;
   experienceBar.style.width = `${progress * 100}%`;
-  experienceLabel.textContent = t('experienceValue', { experience, next: experienceToNext });
+  experienceLabel.textContent = t('experienceValue', {
+    experience: formatProgressValue(experience),
+    next: formatProgressValue(experienceToNext),
+  });
 }
 
 export function updateMapLevel(levelNumber: number) {
@@ -520,7 +522,10 @@ export function updateMapProgression(
     ? t('mapBossActive')
     : status === 'boss-ready'
       ? t('mapBossReady')
-      : t('mapExperienceValue', { experience, next: experienceToNext });
+      : t('mapExperienceValue', {
+        experience: formatProgressValue(experience),
+        next: formatProgressValue(experienceToNext),
+      });
 }
 
 const playerSkillNameKeys: Record<PlayerSkillId, MessageKey> = {
@@ -590,6 +595,13 @@ function renderPips(container: HTMLElement, value: number, max: number, type: 'h
 
 function formatPipValue(value: number) {
   return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function formatProgressValue(value: number) {
+  const rounded = Math.round((value + Number.EPSILON) * 100) / 100;
+  return Number.isInteger(rounded)
+    ? String(rounded)
+    : rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '');
 }
 
 export function getFoodKey(index: number) {
