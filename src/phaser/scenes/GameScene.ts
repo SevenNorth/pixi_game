@@ -190,6 +190,7 @@ export class GameScene extends Phaser.Scene {
   private world = new InfiniteWorldSystem();
   private mapProgression = new MapProgression();
   private obstacleSprites = new Map<string, ObstacleSprite>();
+  private resolvedChunkObstacleIds = new Map<string, Set<string>>();
   private appliedPassiveMaxShieldBonus = 0;
   private damageTween?: Phaser.Tweens.Tween;
   private preserveMapProgressionOnRestart = false;
@@ -228,6 +229,7 @@ export class GameScene extends Phaser.Scene {
     if (!preserveMapProgression) this.mapProgression.reset();
     this.spawnDirector.reset(this.mapProgression.state.level);
     this.obstacleSprites.clear();
+    this.resolvedChunkObstacleIds.clear();
     this.appliedPassiveMaxShieldBonus = 0;
     this.playerAttack = attackForLevel(this.progression.state.level);
     hideMenu();
@@ -996,6 +998,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private addWorldChunk(chunk: WorldChunkState) {
+    const resolvedObstacleIds = this.resolvedChunkObstacleIds.get(chunk.id);
+    if (resolvedObstacleIds) {
+      chunk.obstacles.forEach(obstacle => {
+        if (resolvedObstacleIds.has(obstacle.id)) this.addWorldObstacle(obstacle);
+      });
+      return;
+    }
+
+    const acceptedObstacleIds = new Set<string>();
     const formations = new Map<string, WorldObstacleState[]>();
     chunk.obstacles.forEach(obstacle => {
       const formation = formations.get(obstacle.formationId) ?? [];
@@ -1006,8 +1017,12 @@ export class GameScene extends Phaser.Scene {
       if (!formation.every(obstacle => this.isWorldPositionClear(obstacle.x, obstacle.y, 90))) {
         return;
       }
-      formation.forEach(obstacle => this.addWorldObstacle(obstacle));
+      formation.forEach(obstacle => {
+        acceptedObstacleIds.add(obstacle.id);
+        this.addWorldObstacle(obstacle);
+      });
     });
+    this.resolvedChunkObstacleIds.set(chunk.id, acceptedObstacleIds);
   }
 
   private removeWorldChunk(chunk: WorldChunkState) {
