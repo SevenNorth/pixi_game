@@ -13,6 +13,7 @@ import type { WorldChunkState, WorldObstacleState } from '../../game/simulation/
 import { MapProgression } from '../../game/simulation/MapProgression';
 import { rollMonsterLevel } from '../../game/simulation/MonsterLevelScaling';
 import {
+  getMonsterSpawnProfile,
   MonsterSpawnDirector,
   rollMinionKind,
 } from '../../game/simulation/MonsterSpawnDirector';
@@ -276,7 +277,7 @@ export class GameScene extends Phaser.Scene {
 
     this.syncWorldChunks();
     this.spawnMonster();
-    this.monsterTimer = this.time.addEvent({ delay: 3000, loop: true, callback: this.spawnMonster, callbackScope: this });
+    this.resetMonsterSpawnTimer();
     this.foodTimer = this.time.addEvent({ delay: 5000, loop: true, callback: this.spawnFood, callbackScope: this });
   }
 
@@ -734,6 +735,11 @@ export class GameScene extends Phaser.Scene {
     y: number,
     visualStyle: ProjectileVisualStyle = 'basic-lightning',
   ) {
+    const budget = getMonsterSpawnProfile(this.mapProgression.state.level);
+    const activeProjectiles = this.projectiles.children.entries.filter(child => child.active);
+    if (activeProjectiles.length >= budget.maxActiveProjectiles) {
+      activeProjectiles[0]?.destroy();
+    }
     return createProjectileView(this, this.projectiles, projectile, x, y, visualStyle);
   }
 
@@ -748,7 +754,9 @@ export class GameScene extends Phaser.Scene {
   private spawnMonster() {
     if (this.ended) return;
     this.recycleDistantMinions();
-    this.spawnDirector.syncMapLevel(this.mapProgression.state.level);
+    if (this.spawnDirector.syncMapLevel(this.mapProgression.state.level)) {
+      this.resetMonsterSpawnTimer();
+    }
     const activeMinions = this.countActiveMinions();
     const kind = this.getNextEnemyKind();
     if (kind !== 'boss') {
@@ -891,6 +899,9 @@ export class GameScene extends Phaser.Scene {
 
   private spawnFood() {
     if (this.ended) return;
+    const budget = getMonsterSpawnProfile(this.mapProgression.state.level);
+    const activeFoods = this.foods.children.entries.filter(child => child.active);
+    if (activeFoods.length >= budget.maxActiveFoods) activeFoods[0]?.destroy();
     const index = Phaser.Math.Between(0, foodKeys.length - 1);
     const point = this.getSpawnPoint(250);
     const food = this.physics.add.image(point.x, point.y, foodKeys[index]) as FoodSprite;
@@ -898,6 +909,17 @@ export class GameScene extends Phaser.Scene {
     food.foodKey = foodKeys[index];
     food.expiresAt = this.gameplayTime + 9000;
     this.foods.add(food);
+  }
+
+  private resetMonsterSpawnTimer() {
+    this.monsterTimer?.remove(false);
+    this.monsterTimer = this.time.addEvent({
+      delay: getMonsterSpawnProfile(this.mapProgression.state.level).spawnIntervalMs,
+      loop: true,
+      callback: this.spawnMonster,
+      callbackScope: this,
+    });
+    this.monsterTimer.paused = this.paused;
   }
 
   private syncWorldChunks() {
@@ -1194,6 +1216,8 @@ export class GameScene extends Phaser.Scene {
     const wasMaxLevel = this.progression.state.level >= this.progression.state.maxLevel;
     if (monster.combat.kind === 'boss') {
       if (this.mapProgression.completeBoss()) {
+        this.spawnDirector.syncMapLevel(this.mapProgression.state.level);
+        this.resetMonsterSpawnTimer();
         showMapLevelUp(this.mapProgression.state.level);
         this.rewardChoices.enqueue('boss');
       }

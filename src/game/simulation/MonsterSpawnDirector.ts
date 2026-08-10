@@ -3,6 +3,9 @@ export type SpawnableMinionKind = 'normal' | 'elite';
 export interface MonsterSpawnProfile {
   maxActiveMinions: number;
   maxTotalMinionSpawns: number;
+  spawnIntervalMs: number;
+  maxActiveProjectiles: number;
+  maxActiveFoods: number;
   normalWeight: number;
   eliteWeight: number;
 }
@@ -18,6 +21,11 @@ const MAX_ACTIVE_MINIONS = 30;
 const STARTING_TOTAL_MINION_SPAWNS = 30;
 const TOTAL_MINION_SPAWNS_PER_MAP_LEVEL = 10;
 const MAX_TOTAL_MINION_SPAWNS = 120;
+const STARTING_SPAWN_INTERVAL_MS = 3000;
+const SPAWN_INTERVAL_REDUCTION_PER_MAP_LEVEL_MS = 140;
+const MIN_SPAWN_INTERVAL_MS = 1200;
+const MAX_ACTIVE_PROJECTILES = 180;
+const MAX_ACTIVE_FOODS = 16;
 const STARTING_ELITE_WEIGHT = 0.1;
 const ELITE_WEIGHT_PER_MAP_LEVEL = 0.05;
 const MAX_ELITE_WEIGHT = 0.4;
@@ -43,6 +51,13 @@ export function getMonsterSpawnProfile(mapLevel: number): MonsterSpawnProfile {
   return {
     maxActiveMinions,
     maxTotalMinionSpawns,
+    spawnIntervalMs: Math.max(
+      MIN_SPAWN_INTERVAL_MS,
+      STARTING_SPAWN_INTERVAL_MS
+        - (normalizedMapLevel - 1) * SPAWN_INTERVAL_REDUCTION_PER_MAP_LEVEL_MS,
+    ),
+    maxActiveProjectiles: MAX_ACTIVE_PROJECTILES,
+    maxActiveFoods: MAX_ACTIVE_FOODS,
     normalWeight: 1 - eliteWeight,
     eliteWeight,
   };
@@ -61,7 +76,9 @@ export class MonsterSpawnDirector {
 
   syncMapLevel(mapLevel: number) {
     const normalizedMapLevel = Math.max(1, Math.floor(mapLevel));
-    if (normalizedMapLevel !== this.state.mapLevel) this.reset(normalizedMapLevel);
+    if (normalizedMapLevel === this.state.mapLevel) return false;
+    this.reset(normalizedMapLevel);
+    return true;
   }
 
   canActivateMinion(activeMinions: number) {
