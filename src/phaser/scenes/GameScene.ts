@@ -37,6 +37,7 @@ import {
 import type { CardinalDirection, PlayerDirectionState } from '../../game/simulation/PlayerMovement';
 import { PlayerPassiveSystem } from '../../game/simulation/PlayerPassiveSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
+import { RewardChoiceSystem } from '../../game/simulation/RewardChoiceSystem';
 import { getRewardProfile, scalePlayerExperience } from '../../game/simulation/RewardScaling';
 import { PlayerSkillSystem } from '../../game/simulation/PlayerSkillSystem';
 import type { PlayerSkillRuntimeEvent } from '../../game/simulation/PlayerSkillSystem';
@@ -139,6 +140,7 @@ export class GameScene extends Phaser.Scene {
   private progression = new PlayerProgression();
   private playerSkills = new PlayerSkillSystem();
   private playerPassives = new PlayerPassiveSystem();
+  private rewardChoices = new RewardChoiceSystem();
   private world = new InfiniteWorldSystem();
   private mapProgression = new MapProgression();
   private obstacleSprites = new Map<string, ObstacleSprite>();
@@ -165,6 +167,7 @@ export class GameScene extends Phaser.Scene {
     this.progression.reset();
     this.playerSkills.reset(this.gameplayTime);
     this.playerPassives.reset();
+    this.rewardChoices.reset(Phaser.Math.RND.integerInRange(1, 0x7fffffff));
     this.world.reset();
     if (!preserveMapProgression) this.mapProgression.reset();
     this.spawnDirector.reset(this.mapProgression.state.level);
@@ -1068,6 +1071,7 @@ export class GameScene extends Phaser.Scene {
   private handleLevelUp(levelUps: number) {
     this.vitals.increaseMaxHp(levelUps, levelUps);
     this.playerAttack = attackForLevel(this.progression.state.level);
+    this.rewardChoices.enqueue('level-up', levelUps);
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
