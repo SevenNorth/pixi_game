@@ -40,6 +40,23 @@ export interface RewardChoice {
   candidates: RewardCandidate[];
 }
 
+export type RewardResolution =
+  | {
+      kind: 'active-equip';
+      candidateId: string;
+      selectedSlot: number | null;
+    }
+  | {
+      kind: 'active-forget';
+      candidateId: string;
+      selectedSkillId: PlayerSkillId | null;
+    }
+  | {
+      kind: 'passive-replace';
+      candidateId: string;
+      selectedSlot: number | null;
+    };
+
 export interface RewardChoiceContext {
   activeSkills: readonly LearnedPlayerSkill[];
   passiveSkills: readonly (PassiveSkillSlot | null)[];
@@ -47,6 +64,7 @@ export interface RewardChoiceContext {
 
 export interface RewardChoiceState {
   active: RewardChoice | null;
+  resolution: RewardResolution | null;
   pending: RewardSource[];
   randomState: number;
   nextChoiceId: number;
@@ -57,6 +75,7 @@ const DEFAULT_RANDOM_SEED = 0x6d2b79f5;
 export class RewardChoiceSystem {
   readonly state: RewardChoiceState = {
     active: null,
+    resolution: null,
     pending: [],
     randomState: DEFAULT_RANDOM_SEED,
     nextChoiceId: 1,
@@ -64,6 +83,7 @@ export class RewardChoiceSystem {
 
   reset(seed = DEFAULT_RANDOM_SEED) {
     this.state.active = null;
+    this.state.resolution = null;
     this.state.pending = [];
     this.state.randomState = normalizeSeed(seed);
     this.state.nextChoiceId = 1;
@@ -101,7 +121,38 @@ export class RewardChoiceSystem {
     const candidate = choice.candidates.find(item => item.id === candidateId);
     if (!candidate) return null;
     this.state.active = null;
+    this.state.resolution = null;
     return candidate;
+  }
+
+  beginResolution(resolution: RewardResolution) {
+    const candidateExists = this.state.active?.candidates.some(
+      candidate => candidate.id === resolution.candidateId,
+    );
+    if (!candidateExists) return false;
+    this.state.resolution = resolution;
+    return true;
+  }
+
+  selectResolutionSlot(slot: number) {
+    const resolution = this.state.resolution;
+    if (!resolution || resolution.kind === 'active-forget') return false;
+    resolution.selectedSlot = Math.max(0, Math.floor(slot));
+    return true;
+  }
+
+  selectSkillToForget(skillId: PlayerSkillId) {
+    const resolution = this.state.resolution;
+    if (!resolution || resolution.kind !== 'active-forget') return false;
+    resolution.selectedSkillId = skillId;
+    return true;
+  }
+
+  clearResolutionSelection() {
+    const resolution = this.state.resolution;
+    if (!resolution) return;
+    if (resolution.kind === 'active-forget') resolution.selectedSkillId = null;
+    else resolution.selectedSlot = null;
   }
 
   generateCandidates(source: RewardSource, context: RewardChoiceContext) {

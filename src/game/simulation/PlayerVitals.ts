@@ -4,6 +4,8 @@ export interface PlayerVitalsState {
   shield: number;
   maxShield: number;
   invulnerableUntil: number;
+  protectedUntil: number;
+  damageTakenMultiplier: number;
 }
 
 export interface DamageResult {
@@ -24,6 +26,8 @@ export class PlayerVitals {
     shield: 0,
     maxShield: DEFAULT_MAX_SHIELD,
     invulnerableUntil: 0,
+    protectedUntil: 0,
+    damageTakenMultiplier: 1,
   };
 
   reset() {
@@ -32,6 +36,8 @@ export class PlayerVitals {
     this.state.shield = 0;
     this.state.maxShield = DEFAULT_MAX_SHIELD;
     this.state.invulnerableUntil = 0;
+    this.state.protectedUntil = 0;
+    this.state.damageTakenMultiplier = 1;
   }
 
   increaseMaxHp(amount: number, healAmount = amount) {
@@ -52,14 +58,36 @@ export class PlayerVitals {
     this.state.shield = Math.min(this.state.shield, this.state.maxShield);
   }
 
+  grantInvulnerability(durationMs: number, now: number) {
+    this.state.invulnerableUntil = Math.max(
+      this.state.invulnerableUntil,
+      now + Math.max(0, durationMs),
+    );
+  }
+
+  grantDamageProtection(damageTakenMultiplier: number, durationMs: number, now: number) {
+    const normalizedMultiplier = Math.max(0, Math.min(1, damageTakenMultiplier));
+    const protectedUntil = now + Math.max(0, durationMs);
+    if (
+      now >= this.state.protectedUntil
+      || normalizedMultiplier <= this.state.damageTakenMultiplier
+    ) {
+      this.state.damageTakenMultiplier = normalizedMultiplier;
+    }
+    this.state.protectedUntil = Math.max(this.state.protectedUntil, protectedUntil);
+  }
+
   takeDamage(amount: number, now: number): DamageResult {
     if (amount <= 0 || now < this.state.invulnerableUntil || this.state.hp <= 0) {
       return { applied: false, hpLost: 0, shieldLost: 0, defeated: this.state.hp <= 0 };
     }
 
-    const shieldLost = Math.min(this.state.shield, amount);
+    const resolvedAmount = now < this.state.protectedUntil
+      ? amount * this.state.damageTakenMultiplier
+      : amount;
+    const shieldLost = Math.min(this.state.shield, resolvedAmount);
     this.state.shield -= shieldLost;
-    const hpLost = Math.min(this.state.hp, amount - shieldLost);
+    const hpLost = Math.min(this.state.hp, resolvedAmount - shieldLost);
     this.state.hp -= hpLost;
     this.state.invulnerableUntil = now + PLAYER_INVULNERABILITY_MS;
 

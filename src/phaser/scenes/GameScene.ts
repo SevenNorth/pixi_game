@@ -1,8 +1,7 @@
 import Phaser from 'phaser';
 import {
+  getPlayerSkillEffect,
   getPlayerSkillDefinition,
-  getShieldPoints,
-  playerSkillDefinitions,
 } from '../../game/content/skills/playerSkillDefinitions';
 import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinitions';
 import { getEnemyDefinition } from '../../game/content/enemies/enemyDefinitions';
@@ -38,13 +37,18 @@ import type { CardinalDirection, PlayerDirectionState } from '../../game/simulat
 import { PlayerPassiveSystem } from '../../game/simulation/PlayerPassiveSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
 import { RewardChoiceSystem } from '../../game/simulation/RewardChoiceSystem';
-import type { RewardCandidate } from '../../game/simulation/RewardChoiceSystem';
 import { getRewardProfile, scalePlayerExperience } from '../../game/simulation/RewardScaling';
 import { PlayerSkillSystem } from '../../game/simulation/PlayerSkillSystem';
-import type { PlayerSkillRuntimeEvent } from '../../game/simulation/PlayerSkillSystem';
+import type {
+  ActiveSkillSlotIndex,
+  PlayerSkillRuntimeEvent,
+} from '../../game/simulation/PlayerSkillSystem';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
 import { PLAYER_INVULNERABILITY_MS, PlayerVitals } from '../../game/simulation/PlayerVitals';
-import { resolveSkillTarget } from '../../game/simulation/SkillTargeting';
+import {
+  isPointWithinSegmentRadius,
+  resolveSkillTarget,
+} from '../../game/simulation/SkillTargeting';
 import {
   canProjectileHit,
   createProjectileState,
@@ -59,9 +63,12 @@ import {
   hideRewardChoice,
   showHud,
   showBossAppeared,
+  showActiveEquipChoice,
+  showActiveForgetChoice,
   showLevelUp,
   showMapLevelUp,
   showMenu,
+  showPassiveReplacementChoice,
   showRewardChoice,
   updateHud,
   updateMapProgression,
@@ -136,6 +143,7 @@ export class GameScene extends Phaser.Scene {
   private ended = false;
   private paused = false;
   private rewardPauseActive = false;
+  private suppressCombatInputFrames = 0;
   private lastShotAt = -Infinity;
   private gameplayTime = 0;
   private playerAttack = 1;
@@ -164,6 +172,7 @@ export class GameScene extends Phaser.Scene {
     this.ended = false;
     this.paused = false;
     this.rewardPauseActive = false;
+    this.suppressCombatInputFrames = 0;
     this.killed = 0;
     this.gameplayTime = 0;
     this.lastShotAt = -Infinity;
@@ -184,6 +193,8 @@ export class GameScene extends Phaser.Scene {
     hideRewardChoice();
     window.addEventListener('restart-game', this.restart, { once: true });
     window.addEventListener('reward-choice-selected', this.onRewardChoiceSelected);
+    window.addEventListener('reward-resolution-action', this.onRewardResolutionAction);
+    window.addEventListener('keydown', this.onRewardKeyDown);
     showHud();
     updateHud(this.killed);
     this.updateMapProgressionHud();
@@ -256,18 +267,16 @@ export class GameScene extends Phaser.Scene {
     this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     window.removeEventListener('restart-game', this.restart);
     window.removeEventListener('reward-choice-selected', this.onRewardChoiceSelected);
+    window.removeEventListener('reward-resolution-action', this.onRewardResolutionAction);
+    window.removeEventListener('keydown', this.onRewardKeyDown);
     hideRewardChoice();
   }
 
   update(_time: number, delta: number) {
     const inputFrame = this.inputController.readFrame();
-    if (this.rewardChoices.state.active) {
-      const selectedIndex = [
-        inputFrame.skillPressed['skill-1'],
-        inputFrame.skillPressed['skill-2'],
-        inputFrame.skillPressed['skill-3'],
-      ].findIndex(Boolean);
-      if (selectedIndex >= 0) this.selectRewardByIndex(selectedIndex);
+    if (this.rewardChoices.state.active) return;
+    if (this.suppressCombatInputFrames > 0) {
+      this.suppressCombatInputFrames -= 1;
       return;
     }
     if (inputFrame.pausePressed && !this.ended) this.togglePause();
@@ -448,7 +457,7 @@ export class GameScene extends Phaser.Scene {
     });
     if (!target) return;
 
-    const effect = playerSkillDefinitions[skillId].effect;
+    const effect = getPlayerSkillEffect(skillId, learned.level);
     if (effect.type === 'projectile') {
       const passiveAttack = this.playerPassives.getModifiers().attackBonus;
       const damage = Math.round(
@@ -484,33 +493,76 @@ export class GameScene extends Phaser.Scene {
 
     if (effect.type === 'dash') {
       const bounds = this.physics.world.bounds;
+      const originX = this.player.x;
+      const originY = this.player.y;
       const destinationX = Phaser.Math.Clamp(target.point.x, bounds.left + 24, bounds.right - 24);
       const destinationY = Phaser.Math.Clamp(target.point.y, bounds.top + 24, bounds.bottom - 24);
-      this.playDashTrail(this.player.x, this.player.y, destinationX, destinationY);
+      this.vitals.grantInvulnerability(effect.invulnerabilityMs, this.gameplayTime);
+      this.playDashTrail(
+        originX,
+        originY,
+        destinationX,
+        destinationY,
+        effect.pathDamageMultiplier > 0,
+      );
       (this.player.body as Phaser.Physics.Arcade.Body).reset(destinationX, destinationY);
+      if (effect.pathDamageMultiplier > 0) {
+        const damage = Math.max(1, Math.round(
+          (this.playerAttack + this.playerPassives.getModifiers().attackBonus)
+            * effect.pathDamageMultiplier,
+        ));
+        this.monsters.children.each(child => {
+          const monster = child as MonsterSprite;
+          if (
+            monster.active
+            && !monster.getData('defeated')
+            && isPointWithinSegmentRadius(
+              monster,
+              { x: originX, y: originY },
+              { x: destinationX, y: destinationY },
+              effect.pathRadius + monster.displayWidth * 0.25,
+            )
+          ) {
+            this.damageMonster(monster, damage);
+          }
+          return null;
+        });
+      }
       return;
     }
 
-    this.vitals.restoreShield(getShieldPoints(skillId, learned.level));
+    this.vitals.restoreShield(effect.points);
+    this.vitals.grantDamageProtection(
+      effect.damageTakenMultiplier,
+      effect.protectionMs,
+      this.gameplayTime,
+    );
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
       this.vitals.state.shield,
       this.vitals.state.maxShield,
     );
-    this.playShieldPulse();
+    this.playShieldPulse(effect.protectionMs > 0);
   }
 
   private updatePlayerSkillPresentation() {
     const windingUp = this.playerSkills.getSlotStates(this.gameplayTime)
       .some(slot => slot?.phase === 'windup');
     if (windingUp) this.player.setTint(0xbdefff);
+    else if (this.gameplayTime < this.vitals.state.protectedUntil) this.player.setTint(0x85f7ff);
     else this.player.clearTint();
   }
 
-  private playDashTrail(fromX: number, fromY: number, toX: number, toY: number) {
+  private playDashTrail(
+    fromX: number,
+    fromY: number,
+    toX: number,
+    toY: number,
+    damaging: boolean,
+  ) {
     const trail = this.add.graphics().setDepth(1);
-    trail.lineStyle(8, 0x4ebcff, 0.65);
+    trail.lineStyle(damaging ? 12 : 8, damaging ? 0xd9fbff : 0x4ebcff, 0.72);
     trail.lineBetween(fromX, fromY, toX, toY);
     this.tweens.add({
       targets: trail,
@@ -520,8 +572,12 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  private playShieldPulse() {
+  private playShieldPulse(protectedByShield: boolean) {
     const pulse = this.add.graphics({ x: this.player.x, y: this.player.y }).setDepth(3);
+    if (protectedByShield) {
+      pulse.fillStyle(0x55d8ff, 0.16);
+      pulse.fillCircle(0, 0, 28);
+    }
     pulse.lineStyle(4, 0x55d8ff, 0.9);
     pulse.strokeCircle(0, 0, 28);
     this.tweens.add({
@@ -1097,6 +1153,7 @@ export class GameScene extends Phaser.Scene {
       hideRewardChoice();
       if (this.rewardPauseActive) {
         this.rewardPauseActive = false;
+        this.suppressCombatInputFrames = 1;
         this.setGamePaused(false);
       }
       return;
@@ -1114,16 +1171,117 @@ export class GameScene extends Phaser.Scene {
     if (candidateId) this.selectReward(candidateId);
   };
 
+  private onRewardResolutionAction = (event: Event) => {
+    const detail = (event as CustomEvent<{
+      action?: string;
+      value?: number | string;
+    }>).detail;
+    if (detail?.action) this.handleRewardResolutionAction(detail.action, detail.value);
+  };
+
+  private onRewardKeyDown = (event: KeyboardEvent) => {
+    const choice = this.rewardChoices.state.active;
+    if (!choice) return;
+    const resolution = this.rewardChoices.state.resolution;
+    const numericIndex = /^\d$/.test(event.key) ? Number(event.key) - 1 : -1;
+
+    if (!resolution) {
+      if (numericIndex >= 0 && numericIndex < choice.candidates.length) {
+        event.preventDefault();
+        this.selectRewardByIndex(numericIndex);
+      }
+      return;
+    }
+
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.rewardChoices.clearResolutionSelection();
+      this.presentRewardResolution();
+      return;
+    }
+    if (event.key === 'Enter') {
+      const confirmAction = resolution.kind === 'passive-replace'
+        ? 'confirm-passive-replacement'
+        : resolution.kind === 'active-forget'
+          ? 'confirm-active-forget'
+          : '';
+      if (confirmAction) {
+        event.preventDefault();
+        this.handleRewardResolutionAction(confirmAction);
+      }
+      return;
+    }
+    if (resolution.kind === 'active-equip' && event.key === '0') {
+      event.preventDefault();
+      this.handleRewardResolutionAction('store-active');
+      return;
+    }
+    if (numericIndex < 0) return;
+    event.preventDefault();
+    if (resolution.kind === 'active-equip' && numericIndex < 3) {
+      this.handleRewardResolutionAction('equip-active', numericIndex);
+    } else if (resolution.kind === 'passive-replace') {
+      this.handleRewardResolutionAction('select-passive-slot', numericIndex);
+    } else if (resolution.kind === 'active-forget') {
+      const skillId = this.playerSkills.state.learned[numericIndex]?.id;
+      if (skillId) this.handleRewardResolutionAction('select-active-forget', skillId);
+    }
+  };
+
   private selectRewardByIndex(index: number) {
     const candidate = this.rewardChoices.state.active?.candidates[index];
     if (candidate) this.selectReward(candidate.id);
   }
 
   private selectReward(candidateId: string) {
+    if (this.rewardChoices.state.resolution) return;
     const candidate = this.rewardChoices.state.active?.candidates.find(
       item => item.id === candidateId,
     );
-    if (!candidate || !this.applyRewardCandidate(candidate)) return;
+    if (!candidate) return;
+
+    if (candidate.kind === 'active-skill') {
+      const result = this.playerSkills.learnSkill(candidate.skillId, this.gameplayTime);
+      if (result.status === 'requires-forget') {
+        this.rewardChoices.beginResolution({
+          kind: 'active-forget',
+          candidateId,
+          selectedSkillId: null,
+        });
+        this.presentRewardResolution();
+        return;
+      }
+      if (result.status !== 'learned' && result.status !== 'upgraded') return;
+      if (
+        result.status === 'learned'
+        && !this.playerSkills.state.equipped.includes(candidate.skillId)
+      ) {
+        this.rewardChoices.beginResolution({
+          kind: 'active-equip',
+          candidateId,
+          selectedSlot: null,
+        });
+        this.presentRewardResolution();
+        return;
+      }
+    } else {
+      const result = this.playerPassives.acquire(candidate.skillId);
+      if (result.status === 'requires-replacement') {
+        this.rewardChoices.beginResolution({
+          kind: 'passive-replace',
+          candidateId,
+          selectedSlot: null,
+        });
+        this.presentRewardResolution();
+        return;
+      }
+      if (result.status !== 'learned' && result.status !== 'upgraded') return;
+    }
+
+    this.completeRewardSelection(candidateId);
+  }
+
+  private completeRewardSelection(candidateId: string) {
     this.rewardChoices.select(candidateId);
     updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
     updatePassiveSkills(this.playerPassives.slots);
@@ -1131,13 +1289,106 @@ export class GameScene extends Phaser.Scene {
     this.presentNextRewardChoice();
   }
 
-  private applyRewardCandidate(candidate: RewardCandidate) {
-    if (candidate.kind === 'active-skill') {
-      const result = this.playerSkills.learnSkill(candidate.skillId, this.gameplayTime);
-      return result.status === 'learned' || result.status === 'upgraded';
+  private presentRewardResolution() {
+    const resolution = this.rewardChoices.state.resolution;
+    const candidate = this.rewardChoices.state.active?.candidates.find(
+      item => item.id === resolution?.candidateId,
+    );
+    if (!resolution || !candidate) return;
+
+    if (resolution.kind === 'active-equip' && candidate.kind === 'active-skill') {
+      showActiveEquipChoice(
+        candidate,
+        this.playerSkills.getSlotStates(this.gameplayTime),
+      );
+    } else if (resolution.kind === 'active-forget' && candidate.kind === 'active-skill') {
+      showActiveForgetChoice(
+        candidate,
+        this.playerSkills.state.learned,
+        resolution.selectedSkillId,
+      );
+    } else if (resolution.kind === 'passive-replace' && candidate.kind === 'passive-skill') {
+      showPassiveReplacementChoice(
+        candidate,
+        this.playerPassives.slots,
+        resolution.selectedSlot,
+      );
     }
-    const result = this.playerPassives.acquire(candidate.skillId);
-    return result.status === 'learned' || result.status === 'upgraded';
+  }
+
+  private handleRewardResolutionAction(action: string, value?: number | string) {
+    const resolution = this.rewardChoices.state.resolution;
+    const candidate = this.rewardChoices.state.active?.candidates.find(
+      item => item.id === resolution?.candidateId,
+    );
+    if (!resolution || !candidate) return;
+
+    if (action === 'back') {
+      this.rewardChoices.clearResolutionSelection();
+      this.presentRewardResolution();
+      return;
+    }
+    if (resolution.kind === 'active-equip' && candidate.kind === 'active-skill') {
+      if (action === 'store-active') {
+        this.completeRewardSelection(candidate.id);
+      } else if (action === 'equip-active' && typeof value === 'number') {
+        const equipped = this.playerSkills.equipSkill(
+          candidate.skillId,
+          value as ActiveSkillSlotIndex,
+          this.gameplayTime,
+          true,
+        );
+        if (equipped) this.completeRewardSelection(candidate.id);
+      }
+      return;
+    }
+    if (resolution.kind === 'passive-replace' && candidate.kind === 'passive-skill') {
+      if (action === 'select-passive-slot' && typeof value === 'number') {
+        if (value < 0 || value >= this.playerPassives.slots.length) return;
+        this.rewardChoices.selectResolutionSlot(value);
+        this.presentRewardResolution();
+      } else if (
+        action === 'confirm-passive-replacement'
+        && resolution.selectedSlot !== null
+      ) {
+        const result = this.playerPassives.acquire(
+          candidate.skillId,
+          resolution.selectedSlot,
+          true,
+        );
+        if (result.status === 'learned') this.completeRewardSelection(candidate.id);
+      }
+      return;
+    }
+    if (resolution.kind === 'active-forget' && candidate.kind === 'active-skill') {
+      if (action === 'select-active-forget' && typeof value === 'string') {
+        const learned = this.playerSkills.getLearnedSkill(value as PlayerSkillId);
+        if (!learned) return;
+        this.rewardChoices.selectSkillToForget(learned.id);
+        this.presentRewardResolution();
+      } else if (
+        action === 'confirm-active-forget'
+        && resolution.selectedSkillId
+      ) {
+        const result = this.playerSkills.learnSkill(
+          candidate.skillId,
+          this.gameplayTime,
+          resolution.selectedSkillId,
+          true,
+        );
+        if (result.status !== 'learned') return;
+        if (this.playerSkills.state.equipped.includes(candidate.skillId)) {
+          this.completeRewardSelection(candidate.id);
+        } else {
+          this.rewardChoices.beginResolution({
+            kind: 'active-equip',
+            candidateId: candidate.id,
+            selectedSlot: null,
+          });
+          this.presentRewardResolution();
+        }
+      }
+    }
   }
 
   private syncPassiveModifiers() {

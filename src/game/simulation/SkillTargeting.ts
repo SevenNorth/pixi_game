@@ -45,6 +45,25 @@ export function resolveSkillTarget(
   };
 }
 
+export function isPointWithinSegmentRadius(
+  point: SkillPoint,
+  start: SkillPoint,
+  end: SkillPoint,
+  radius: number,
+) {
+  const segmentX = end.x - start.x;
+  const segmentY = end.y - start.y;
+  const segmentLengthSquared = segmentX * segmentX + segmentY * segmentY;
+  const projection = segmentLengthSquared > 0
+    ? ((point.x - start.x) * segmentX + (point.y - start.y) * segmentY)
+      / segmentLengthSquared
+    : 0;
+  const t = Math.max(0, Math.min(1, projection));
+  const nearestX = start.x + segmentX * t;
+  const nearestY = start.y + segmentY * t;
+  return Math.hypot(point.x - nearestX, point.y - nearestY) <= Math.max(0, radius);
+}
+
 function resolveNearestTarget(context: SkillTargetContext): ResolvedSkillTarget | null {
   const rangeSquared = Math.max(0, context.range) ** 2;
   const nearest = (context.candidates ?? [])

@@ -7,15 +7,18 @@ import type { PassiveSkillSlot } from '../../game/simulation/PlayerPassiveSystem
 import type { PlayerSkillSlotState } from '../../game/simulation/PlayerSkillSystem';
 import type { MapProgressionStatus } from '../../game/simulation/MapProgression';
 import type {
+  ActiveSkillRewardCandidate,
+  PassiveSkillRewardCandidate,
   RewardCandidate,
   RewardChoice,
   RewardSource,
 } from '../../game/simulation/RewardChoiceSystem';
 import {
+  getPlayerSkillEffect,
   getPlayerSkillDefinition,
-  getShieldPoints,
 } from '../../game/content/skills/playerSkillDefinitions';
 import { passiveSkillDefinitions } from '../../game/content/skills/passiveSkillDefinitions';
+import type { LearnedPlayerSkill } from '../../game/simulation/PlayerSkillSystem';
 
 let root: HTMLElement;
 let hud: HTMLElement;
@@ -200,6 +203,7 @@ const rewardSourceKeys: Record<RewardSource, MessageKey> = {
 
 export function showRewardChoice(choice: RewardChoice, pendingCount: number) {
   rewardChoiceSource.textContent = t(rewardSourceKeys[choice.source]);
+  (root.querySelector('#reward-choice-title') as HTMLElement).textContent = t('rewardChoiceTitle');
   rewardChoicePending.textContent = t('rewardChoicePending', { count: pendingCount });
   rewardChoiceOptions.replaceChildren(
     ...choice.candidates.map((candidate, index) => createRewardOption(candidate, index)),
@@ -211,6 +215,152 @@ export function showRewardChoice(choice: RewardChoice, pendingCount: number) {
 export function hideRewardChoice() {
   rewardChoice.hidden = true;
   rewardChoiceOptions.replaceChildren();
+}
+
+export function showActiveEquipChoice(
+  candidate: ActiveSkillRewardCandidate,
+  slots: Array<PlayerSkillSlotState | null>,
+) {
+  setRewardResolutionHeader(
+    'rewardChooseActiveSlot',
+    'rewardActiveSlotHint',
+    t(playerSkillNameKeys[candidate.skillId]),
+  );
+  const slotButtons = slots.map((slot, index) => createResolutionOption({
+    key: String(index + 1),
+    name: slot ? t(playerSkillNameKeys[slot.id]) : t('emptySkill'),
+    detail: slot ? `Lv.${slot.level}` : '',
+    action: 'equip-active',
+    value: index,
+  }));
+  slotButtons.push(createResolutionOption({
+    key: '0',
+    name: t('rewardStoreSkill'),
+    detail: t('rewardStoreSkillEffect'),
+    action: 'store-active',
+  }));
+  rewardChoiceOptions.replaceChildren(...slotButtons);
+  rewardChoice.hidden = false;
+}
+
+export function showPassiveReplacementChoice(
+  candidate: PassiveSkillRewardCandidate,
+  slots: Array<PassiveSkillSlot | null>,
+  selectedSlot: number | null,
+) {
+  if (selectedSlot !== null) {
+    const selected = slots[selectedSlot];
+    showReplacementConfirmation(
+      selected ? t(passiveSkillNameKeys[selected.id]) : t('emptySkill'),
+      selected?.level ?? 0,
+      'confirm-passive-replacement',
+    );
+    return;
+  }
+  setRewardResolutionHeader(
+    'rewardChoosePassiveSlot',
+    undefined,
+    t(passiveSkillNameKeys[candidate.skillId]),
+  );
+  rewardChoiceOptions.replaceChildren(...slots.map((slot, index) => createResolutionOption({
+    key: String(index + 1),
+    name: slot ? t(passiveSkillNameKeys[slot.id]) : t('emptySkill'),
+    detail: slot ? `Lv.${slot.level}` : '',
+    action: 'select-passive-slot',
+    value: index,
+  })));
+  rewardChoice.hidden = false;
+}
+
+export function showActiveForgetChoice(
+  candidate: ActiveSkillRewardCandidate,
+  learned: readonly LearnedPlayerSkill[],
+  selectedSkillId: PlayerSkillId | null,
+) {
+  if (selectedSkillId) {
+    const selected = learned.find(skill => skill.id === selectedSkillId);
+    showReplacementConfirmation(
+      selected ? t(playerSkillNameKeys[selected.id]) : t('emptySkill'),
+      selected?.level ?? 0,
+      'confirm-active-forget',
+    );
+    return;
+  }
+  setRewardResolutionHeader(
+    'rewardChooseForgottenSkill',
+    undefined,
+    t(playerSkillNameKeys[candidate.skillId]),
+  );
+  rewardChoiceOptions.replaceChildren(...learned.map((skill, index) => createResolutionOption({
+    key: String(index + 1),
+    name: t(playerSkillNameKeys[skill.id]),
+    detail: `Lv.${skill.level}`,
+    action: 'select-active-forget',
+    value: skill.id,
+  })));
+  rewardChoice.hidden = false;
+}
+
+interface ResolutionOption {
+  key: string;
+  name: string;
+  detail: string;
+  action: string;
+  value?: number | string;
+}
+
+function setRewardResolutionHeader(
+  titleKey: MessageKey,
+  detailKey?: MessageKey,
+  subject?: string,
+) {
+  rewardChoiceSource.textContent = subject ?? t('rewardUpgrade');
+  rewardChoicePending.textContent = detailKey ? t(detailKey) : '';
+  (root.querySelector('#reward-choice-title') as HTMLElement).textContent = t(titleKey);
+}
+
+function createResolutionOption(option: ResolutionOption) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'reward-option reward-resolution-option';
+  button.innerHTML = `
+    <span class="reward-option-key">${option.key}</span>
+    <span class="reward-option-name">${option.name}</span>
+    <span class="reward-option-effect">${option.detail}</span>
+  `;
+  button.addEventListener('click', () => dispatchRewardResolution(option.action, option.value));
+  return button;
+}
+
+function showReplacementConfirmation(name: string, level: number, confirmAction: string) {
+  setRewardResolutionHeader('rewardConfirmReplacement');
+  const warning = document.createElement('div');
+  warning.className = 'reward-replacement-confirmation';
+  warning.innerHTML = `
+    <div class="reward-replacement-warning">${t('rewardReplacementWarning', { name, level })}</div>
+    <div class="reward-resolution-actions">
+      <button class="reward-action reward-action-back" type="button">${t('rewardBack')}</button>
+      <button class="reward-action reward-action-confirm" type="button">${t('rewardConfirmReplacement')}</button>
+    </div>
+    <div class="reward-option-hint">${t('rewardConfirmHint')}</div>
+  `;
+  (warning.querySelector('.reward-action-back') as HTMLButtonElement).addEventListener(
+    'click',
+    () => dispatchRewardResolution('back'),
+  );
+  (warning.querySelector('.reward-action-confirm') as HTMLButtonElement).addEventListener(
+    'click',
+    () => dispatchRewardResolution(confirmAction),
+  );
+  rewardChoiceOptions.replaceChildren(warning);
+  rewardChoice.hidden = false;
+  (warning.querySelector('.reward-action-confirm') as HTMLButtonElement).focus();
+}
+
+function dispatchRewardResolution(action: string, value?: number | string) {
+  window.dispatchEvent(new CustomEvent('reward-resolution-action', {
+    detail: { action, value },
+  }));
 }
 
 function createRewardOption(candidate: RewardCandidate, index: number) {
@@ -262,22 +412,46 @@ function getRewardCandidateEffect(candidate: RewardCandidate) {
   }
 
   const definition = getPlayerSkillDefinition(candidate.skillId, candidate.nextLevel);
+  const effect = getPlayerSkillEffect(candidate.skillId, candidate.nextLevel);
   if (candidate.skillId === 'lightning-bolt') {
+    if (effect.type !== 'projectile') return '';
     return t('rewardLightningEffect', {
       damage: definition.damageMultiplier.toFixed(2),
       range: definition.range,
+      radius: effect.splashRadius,
+      splash: Math.round(effect.splashDamageMultiplier * 100),
       cooldown: (definition.cooldownMs / 1000).toFixed(2),
     });
   }
   if (candidate.skillId === 'thunder-dash') {
+    if (effect.type !== 'dash') return '';
+    const invulnerability = effect.invulnerabilityMs > 0
+      ? t('rewardDashInvulnerability', {
+        duration: (effect.invulnerabilityMs / 1000).toFixed(2),
+      })
+      : '';
+    const pathDamage = effect.pathDamageMultiplier > 0
+      ? t('rewardDashPathDamage', {
+        damage: Math.round(effect.pathDamageMultiplier * 100),
+      })
+      : '';
     return t('rewardDashEffect', {
       range: definition.range,
       cooldown: (definition.cooldownMs / 1000).toFixed(2),
+      bonus: `${invulnerability}${pathDamage}`,
     });
   }
+  if (effect.type !== 'shield') return '';
+  const protection = effect.protectionMs > 0
+    ? t('rewardShieldProtection', {
+      duration: (effect.protectionMs / 1000).toFixed(1),
+      reduction: Math.round((1 - effect.damageTakenMultiplier) * 100),
+    })
+    : '';
   return t('rewardShieldEffect', {
-    points: getShieldPoints(candidate.skillId, candidate.nextLevel),
+    points: effect.points,
     cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    bonus: protection,
   });
 }
 

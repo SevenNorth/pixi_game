@@ -474,6 +474,59 @@ body {
   font-size: 11px;
 }
 
+.reward-resolution-option {
+  min-height: 150px;
+}
+
+.reward-replacement-confirmation {
+  grid-column: 1 / -1;
+  display: grid;
+  justify-items: center;
+  gap: 22px;
+  padding: 28px;
+  border: 1px solid rgba(255, 91, 104, 0.72);
+  border-radius: 6px;
+  background: rgba(12, 28, 36, 0.96);
+  text-align: center;
+}
+
+.reward-replacement-warning {
+  max-width: 560px;
+  color: #ffd4d8;
+  font-size: 17px;
+  line-height: 1.5;
+}
+
+.reward-resolution-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px;
+}
+
+.reward-action {
+  min-width: 150px;
+  min-height: 42px;
+  padding: 8px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.32);
+  border-radius: 5px;
+  background: rgba(20, 43, 53, 0.96);
+  color: #f4ffff;
+  font: 700 13px/1.2 "Trebuchet MS", Arial, sans-serif;
+  cursor: pointer;
+}
+
+.reward-action:hover,
+.reward-action:focus-visible {
+  border-color: #ffd24a;
+  outline: none;
+}
+
+.reward-action-confirm {
+  border-color: rgba(255, 91, 104, 0.8);
+  color: #ffd4d8;
+}
+
 @keyframes level-up-toast {
   0% { opacity: 0; transform: translateY(-8px); }
   15% { opacity: 1; transform: translateY(0); }
