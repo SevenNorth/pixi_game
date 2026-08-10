@@ -1,4 +1,5 @@
 import Phaser from 'phaser';
+import type { BossVariant } from '../../../game/content/enemies/enemyDefinitions';
 import type { ProjectileVisualStyle } from '../projectiles/ProjectileView';
 
 export type EnemyVisualSource = 'ghost' | 'monster' | 'monster2' | 'monster3';
@@ -17,7 +18,7 @@ export interface EnemyVisualDefinition {
 }
 
 export interface BossVisualDefinition {
-  id: 'dragon-black' | 'dragon-green';
+  id: BossVariant;
   textureKey: 'boss-dragon-black' | 'boss-dragon-green';
 }
 

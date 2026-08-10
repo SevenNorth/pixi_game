@@ -1,5 +1,6 @@
 export type EnemyKind = 'normal' | 'elite' | 'boss';
-export type EnemySkillKind = 'aimed-shot' | 'radial-burst';
+export type EnemySkillKind = 'aimed-shot' | 'radial-burst' | 'spread-shot';
+export type BossVariant = 'dragon-black' | 'dragon-green';
 
 export interface EnemyDefinition {
   kind: EnemyKind;
@@ -21,6 +22,32 @@ export interface EnemyDefinition {
   aggroExitDistance: number;
   maxChaseDistance: number;
 }
+
+export interface BossCombatVariantDefinition {
+  id: BossVariant;
+  phaseOneSkills: readonly EnemySkillKind[];
+  phaseTwoSkills: readonly EnemySkillKind[];
+}
+
+export const ELITE_SECOND_SKILL_LEVEL = 4;
+export const BOSS_PHASE_TWO_HP_RATIO = 0.5;
+export const BOSS_PHASE_TRANSITION_INVULNERABILITY_MS = 700;
+export const BOSS_PHASE_TWO_ATTACK_COOLDOWN_MULTIPLIER = 0.78;
+export const BOSS_PHASE_TWO_SKILL_COOLDOWN_MULTIPLIER = 0.75;
+export const BOSS_PHASE_TWO_SPEED_MULTIPLIER = 1.12;
+
+export const bossCombatVariants: Record<BossVariant, BossCombatVariantDefinition> = {
+  'dragon-black': {
+    id: 'dragon-black',
+    phaseOneSkills: ['aimed-shot', 'radial-burst'],
+    phaseTwoSkills: ['aimed-shot', 'spread-shot', 'aimed-shot', 'radial-burst'],
+  },
+  'dragon-green': {
+    id: 'dragon-green',
+    phaseOneSkills: ['radial-burst', 'aimed-shot'],
+    phaseTwoSkills: ['radial-burst', 'spread-shot', 'radial-burst', 'aimed-shot'],
+  },
+};
 
 export const enemyDefinitions: Record<EnemyKind, EnemyDefinition> = {
   normal: {

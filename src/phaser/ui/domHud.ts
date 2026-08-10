@@ -184,6 +184,10 @@ export function showBossAppeared(levelNumber: number) {
   enqueueNotice(t('bossAppeared'), t('bossChallenge', { level: levelNumber }));
 }
 
+export function showBossPhaseTwo() {
+  enqueueNotice(t('bossPhaseTwo'), t('bossPhaseTwoDetail'));
+}
+
 export function showMapLevelUp(levelNumber: number) {
   enqueueNotice(t('mapLevelUp'), t('mapLevelReached', { level: levelNumber }));
 }

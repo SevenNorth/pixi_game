@@ -5,7 +5,10 @@ import {
 } from '../../game/content/skills/playerSkillDefinitions';
 import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinitions';
 import { getEnemyDefinition } from '../../game/content/enemies/enemyDefinitions';
-import type { EnemyKind } from '../../game/content/enemies/enemyDefinitions';
+import type {
+  EnemyKind,
+  EnemySkillKind,
+} from '../../game/content/enemies/enemyDefinitions';
 import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
 import type { FoodKey } from '../../game/simulation/FoodRecovery';
 import { InfiniteWorldSystem } from '../../game/simulation/InfiniteWorld';
@@ -24,6 +27,7 @@ import {
   relocateMonsterCombatState,
   setMonsterPatrolTarget,
   finishEnemySkill,
+  getEnemyAttackCooldownMs,
   getEnemySkillKind,
   startEnemySkill,
   updateMonsterAggro,
@@ -70,6 +74,7 @@ import {
   hideRewardChoice,
   showHud,
   showBossAppeared,
+  showBossPhaseTwo,
   showActiveEquipChoice,
   showActiveForgetChoice,
   showLevelUp,
@@ -91,7 +96,11 @@ import {
   updatePlayerShieldView,
 } from '../view/fx/PlayerShieldView';
 import type { PlayerShieldView } from '../view/fx/PlayerShieldView';
-import { playEnemySkillImpact, playEnemyWarning } from '../view/fx/playEnemyWarning';
+import {
+  playBossPhaseTransition,
+  playEnemySkillImpact,
+  playEnemyWarning,
+} from '../view/fx/playEnemyWarning';
 import {
   playLightningSkillCast,
   playLightningSkillImpact,
@@ -789,6 +798,7 @@ export class GameScene extends Phaser.Scene {
       point.y,
       kind,
       this.gameplayTime,
+      bossVisual?.id,
     );
     monster.animationDirection = 'down';
     monster.visualDefinition = visualDefinition;
@@ -1013,8 +1023,12 @@ export class GameScene extends Phaser.Scene {
 
   private updateEnemyAbilities(monster: MonsterSprite, playerDistance: number) {
     if (monster.combat.kind === 'normal') return;
-    const definition = getEnemyDefinition(monster.combat.kind);
     const now = this.gameplayTime;
+
+    if (now < monster.combat.invulnerableUntil) {
+      (monster.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
+      return;
+    }
 
     if (monster.combat.activeSkill) {
       (monster.body as Phaser.Physics.Arcade.Body).setVelocity(0, 0);
@@ -1055,7 +1069,7 @@ export class GameScene extends Phaser.Scene {
     if (now >= monster.combat.nextAttackAt && playerDistance <= 680) {
       const direction = this.getDirectionToPlayer(monster);
       this.launchEnemyProjectile(monster, direction.x, direction.y);
-      monster.combat.nextAttackAt = now + definition.attackCooldownMs;
+      monster.combat.nextAttackAt = now + getEnemyAttackCooldownMs(monster.combat);
     }
   }
 
@@ -1077,7 +1091,7 @@ export class GameScene extends Phaser.Scene {
     const isBoss = monster.combat.kind === 'boss';
     const speed = isBoss ? 300 : 250;
     const visualStyle: ProjectileVisualStyle = isBoss
-      ? 'enemy-skill'
+      ? (monster.combat.bossVariant === 'dragon-green' ? 'enemy-venom' : 'enemy-void')
       : monster.visualDefinition?.projectileStyle ?? 'enemy-ghost';
     const visualLength = getProjectileVisualLength(visualStyle);
     const muzzleDistance = Math.max(24, monster.displayWidth * 0.42);
@@ -1101,7 +1115,7 @@ export class GameScene extends Phaser.Scene {
 
   private launchEnemySkill(
     monster: MonsterSprite,
-    skill: 'aimed-shot' | 'radial-burst',
+    skill: EnemySkillKind,
     directionX: number,
     directionY: number,
   ) {
@@ -1115,8 +1129,27 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const radius = monster.combat.kind === 'boss' ? 150 : 100;
-    playEnemySkillImpact(this, monster.x, monster.y, radius);
+    if (skill === 'spread-shot') {
+      const baseAngle = Math.atan2(directionY, directionX);
+      [-24, -12, 0, 12, 24].forEach(offset => {
+        const angle = baseAngle + Phaser.Math.DegToRad(offset);
+        this.launchEnemyProjectile(
+          monster,
+          Math.cos(angle),
+          Math.sin(angle),
+          monster.combat.skillDamage,
+        );
+      });
+      return;
+    }
+
+    const radius = monster.combat.kind === 'boss'
+      ? (monster.combat.bossPhase === 2 ? 170 : 150)
+      : 100;
+    const impactColor = monster.combat.bossVariant === 'dragon-black'
+      ? 0xb767ff
+      : monster.combat.bossVariant === 'dragon-green' ? 0x70e56f : 0xff8654;
+    playEnemySkillImpact(this, monster.x, monster.y, radius, impactColor);
     const distance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
     if (distance <= radius) this.applyPlayerDamage(monster.combat.skillDamage);
   }
@@ -1196,9 +1229,21 @@ export class GameScene extends Phaser.Scene {
 
   private damageMonster(monster: MonsterSprite, damage: number) {
     if (monster.getData('defeated')) return;
-    const damageResult = applyMonsterDamage(monster.combat, damage);
+    const damageResult = applyMonsterDamage(monster.combat, damage, this.gameplayTime);
+    if (!damageResult.applied) return;
     monster.healthBar.setVisible(!damageResult.defeated);
     this.updateMonsterHealthBar(monster);
+    if (damageResult.phaseChanged) {
+      monster.warningView?.destroy();
+      monster.warningView = undefined;
+      playBossPhaseTransition(
+        this,
+        monster,
+        monster.combat.bossVariant ?? 'dragon-black',
+      );
+      showBossPhaseTwo();
+      return;
+    }
     if (!damageResult.defeated) {
       playMonsterHit(this, monster);
       return;
@@ -1629,7 +1674,9 @@ export class GameScene extends Phaser.Scene {
     monster.healthBar.clear();
     monster.healthBar.fillStyle(0x15252d, 0.9);
     monster.healthBar.fillRect(monster.x - width / 2, healthBarY, width, height);
-    const healthColor = monster.combat.kind === 'boss' ? 0xff9d45 : monster.combat.kind === 'elite' ? 0xc778ff : 0xff5b68;
+    const healthColor = monster.combat.kind === 'boss'
+      ? (monster.combat.bossPhase === 2 ? 0xff4f63 : 0xff9d45)
+      : monster.combat.kind === 'elite' ? 0xc778ff : 0xff5b68;
     monster.healthBar.fillStyle(healthColor, 1);
     monster.healthBar.fillRect(monster.x - width / 2, healthBarY, width * ratio, height);
   }

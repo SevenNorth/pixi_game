@@ -1,8 +1,22 @@
-import { getEnemyDefinition } from '../content/enemies/enemyDefinitions';
-import type { EnemyKind, EnemySkillKind } from '../content/enemies/enemyDefinitions';
+import {
+  BOSS_PHASE_TRANSITION_INVULNERABILITY_MS,
+  BOSS_PHASE_TWO_ATTACK_COOLDOWN_MULTIPLIER,
+  BOSS_PHASE_TWO_HP_RATIO,
+  BOSS_PHASE_TWO_SKILL_COOLDOWN_MULTIPLIER,
+  BOSS_PHASE_TWO_SPEED_MULTIPLIER,
+  bossCombatVariants,
+  ELITE_SECOND_SKILL_LEVEL,
+  getEnemyDefinition,
+} from '../content/enemies/enemyDefinitions';
+import type {
+  BossVariant,
+  EnemyKind,
+  EnemySkillKind,
+} from '../content/enemies/enemyDefinitions';
 import { getMonsterLevelModifiers } from './MonsterLevelScaling';
 
 export type MonsterAggroState = 'idle' | 'chasing' | 'returning';
+export type BossCombatPhase = 1 | 2;
 
 export interface MonsterCombatState {
   level: number;
@@ -21,6 +35,9 @@ export interface MonsterCombatState {
   patrolTargetActive: boolean;
   patrolPauseUntil: number;
   kind: EnemyKind;
+  bossVariant?: BossVariant;
+  bossPhase: BossCombatPhase;
+  invulnerableUntil: number;
   nextAttackAt: number;
   nextSkillAt: number;
   skillSequence: number;
@@ -33,9 +50,11 @@ export interface MonsterCombatState {
 }
 
 export interface MonsterDamageResult {
+  applied: boolean;
   damage: number;
   remainingHp: number;
   defeated: boolean;
+  phaseChanged: boolean;
 }
 
 export function createMonsterCombatState(
@@ -44,6 +63,7 @@ export function createMonsterCombatState(
   homeY = 0,
   kind: EnemyKind = 'normal',
   now = 0,
+  bossVariant?: BossVariant,
 ): MonsterCombatState {
   const normalizedLevel = Math.max(1, Math.floor(level));
   const definition = getEnemyDefinition(kind);
@@ -70,6 +90,9 @@ export function createMonsterCombatState(
     patrolTargetActive: false,
     patrolPauseUntil: 0,
     kind,
+    bossVariant,
+    bossPhase: 1,
+    invulnerableUntil: 0,
     nextAttackAt: now + definition.attackCooldownMs,
     nextSkillAt: now + definition.skillCooldownMs,
     skillSequence: 0,
@@ -77,9 +100,23 @@ export function createMonsterCombatState(
 }
 
 export function getEnemySkillKind(state: MonsterCombatState): EnemySkillKind | undefined {
-  const definition = getEnemyDefinition(state.kind);
-  if (definition.skillKinds.length === 0) return undefined;
-  return definition.skillKinds[state.skillSequence % definition.skillKinds.length];
+  const skillKinds = getEnemySkillKinds(state);
+  if (skillKinds.length === 0) return undefined;
+  return skillKinds[state.skillSequence % skillKinds.length];
+}
+
+export function getEnemyAttackCooldownMs(state: MonsterCombatState) {
+  const baseCooldown = getEnemyDefinition(state.kind).attackCooldownMs;
+  return state.kind === 'boss' && state.bossPhase === 2
+    ? baseCooldown * BOSS_PHASE_TWO_ATTACK_COOLDOWN_MULTIPLIER
+    : baseCooldown;
+}
+
+export function getEnemySkillCooldownMs(state: MonsterCombatState) {
+  const baseCooldown = getEnemyDefinition(state.kind).skillCooldownMs;
+  return state.kind === 'boss' && state.bossPhase === 2
+    ? baseCooldown * BOSS_PHASE_TWO_SKILL_COOLDOWN_MULTIPLIER
+    : baseCooldown;
 }
 
 export function startEnemySkill(
@@ -101,7 +138,7 @@ export function startEnemySkill(
 
 export function finishEnemySkill(state: MonsterCombatState, now: number) {
   state.activeSkill = undefined;
-  state.nextSkillAt = now + getEnemyDefinition(state.kind).skillCooldownMs;
+  state.nextSkillAt = now + getEnemySkillCooldownMs(state);
 }
 
 export function setMonsterPatrolTarget(
@@ -127,7 +164,6 @@ export function relocateMonsterCombatState(
   homeY: number,
   now: number,
 ) {
-  const definition = getEnemyDefinition(state.kind);
   state.aggro = 'idle';
   state.homeX = homeX;
   state.homeY = homeY;
@@ -136,18 +172,63 @@ export function relocateMonsterCombatState(
   state.patrolTargetActive = false;
   state.patrolPauseUntil = now;
   state.activeSkill = undefined;
-  state.nextAttackAt = now + definition.attackCooldownMs;
-  state.nextSkillAt = now + definition.skillCooldownMs;
+  state.nextAttackAt = now + getEnemyAttackCooldownMs(state);
+  state.nextSkillAt = now + getEnemySkillCooldownMs(state);
 }
 
-export function applyMonsterDamage(state: MonsterCombatState, amount: number): MonsterDamageResult {
+export function applyMonsterDamage(
+  state: MonsterCombatState,
+  amount: number,
+  now: number,
+): MonsterDamageResult {
+  if (now < state.invulnerableUntil) {
+    return {
+      applied: false,
+      damage: 0,
+      remainingHp: state.hp,
+      defeated: false,
+      phaseChanged: false,
+    };
+  }
+  const previousHp = state.hp;
   const damage = Math.max(0, amount);
   state.hp = Math.max(0, state.hp - damage);
+  const phaseChanged = enterBossPhaseTwoIfNeeded(state, now);
+  const appliedDamage = previousHp - state.hp;
   return {
-    damage,
+    applied: appliedDamage > 0,
+    damage: appliedDamage,
     remainingHp: state.hp,
-    defeated: state.hp <= 0,
+    defeated: state.hp <= 0 && !phaseChanged,
+    phaseChanged,
   };
+}
+
+function getEnemySkillKinds(state: MonsterCombatState): readonly EnemySkillKind[] {
+  const definition = getEnemyDefinition(state.kind);
+  if (state.kind === 'elite' && state.level >= ELITE_SECOND_SKILL_LEVEL) {
+    return ['aimed-shot', 'radial-burst'];
+  }
+  if (state.kind !== 'boss') return definition.skillKinds;
+  const variant = bossCombatVariants[state.bossVariant ?? 'dragon-black'];
+  return state.bossPhase === 2 ? variant.phaseTwoSkills : variant.phaseOneSkills;
+}
+
+function enterBossPhaseTwoIfNeeded(state: MonsterCombatState, now: number) {
+  if (
+    state.kind !== 'boss'
+    || state.bossPhase !== 1
+    || state.hp > state.maxHp * BOSS_PHASE_TWO_HP_RATIO
+  ) return false;
+
+  state.hp = Math.max(state.hp, Math.ceil(state.maxHp * BOSS_PHASE_TWO_HP_RATIO));
+  state.bossPhase = 2;
+  state.invulnerableUntil = now + BOSS_PHASE_TRANSITION_INVULNERABILITY_MS;
+  state.activeSkill = undefined;
+  state.speed *= BOSS_PHASE_TWO_SPEED_MULTIPLIER;
+  state.nextAttackAt = state.invulnerableUntil + getEnemyAttackCooldownMs(state) * 0.35;
+  state.nextSkillAt = state.invulnerableUntil + getEnemySkillCooldownMs(state) * 0.45;
+  return true;
 }
 
 export function updateMonsterAggro(

@@ -1,5 +1,8 @@
 import Phaser from 'phaser';
-import type { EnemySkillKind } from '../../../game/content/enemies/enemyDefinitions';
+import type {
+  BossVariant,
+  EnemySkillKind,
+} from '../../../game/content/enemies/enemyDefinitions';
 
 export function playEnemyWarning(
   scene: Phaser.Scene,
@@ -23,6 +26,17 @@ export function playEnemyWarning(
         Math.sin(angle) * 96,
       );
     }
+  } else if (skill === 'spread-shot') {
+    warning.lineStyle(10, 0xff4f63, 0.2);
+    [-24, -12, 0, 12, 24].forEach(offset => {
+      const direction = rotateDirection(directionX, directionY, Phaser.Math.DegToRad(offset));
+      warning.lineBetween(0, 0, direction.x * 540, direction.y * 540);
+    });
+    warning.lineStyle(3, 0xffd45c, 0.9);
+    [-24, 24].forEach(offset => {
+      const direction = rotateDirection(directionX, directionY, Phaser.Math.DegToRad(offset));
+      warning.lineBetween(0, 0, direction.x * 540, direction.y * 540);
+    });
   } else {
     warning.lineStyle(12, 0xff4f63, 0.3);
     warning.lineBetween(0, 0, directionX * 620, directionY * 620);
@@ -37,6 +51,39 @@ export function playEnemyWarning(
     repeat: -1,
   });
   return warning;
+}
+
+export function playBossPhaseTransition(
+  scene: Phaser.Scene,
+  boss: Phaser.Physics.Arcade.Sprite,
+  variant: BossVariant,
+) {
+  const color = variant === 'dragon-black' ? 0xb767ff : 0x70e56f;
+  const ring = scene.add.graphics({ x: boss.x, y: boss.y })
+    .setDepth(3)
+    .setBlendMode(Phaser.BlendModes.ADD);
+  ring.lineStyle(7, color, 0.95);
+  ring.strokeCircle(0, 0, boss.displayWidth * 0.42);
+  scene.tweens.add({
+    targets: ring,
+    scale: 1.8,
+    alpha: 0,
+    duration: 700,
+    onComplete: () => ring.destroy(),
+  });
+  boss.setTint(0xffffff);
+  scene.tweens.add({
+    targets: boss,
+    alpha: 0.35,
+    duration: 90,
+    yoyo: true,
+    repeat: 3,
+    onComplete: () => {
+      if (!boss.active) return;
+      boss.setAlpha(1);
+      boss.setTint(color);
+    },
+  });
 }
 
 export function playEnemySkillImpact(
@@ -58,4 +105,13 @@ export function playEnemySkillImpact(
     duration: 260,
     onComplete: () => impact.destroy(),
   });
+}
+
+function rotateDirection(x: number, y: number, angle: number) {
+  const cosine = Math.cos(angle);
+  const sine = Math.sin(angle);
+  return {
+    x: x * cosine - y * sine,
+    y: x * sine + y * cosine,
+  };
 }
