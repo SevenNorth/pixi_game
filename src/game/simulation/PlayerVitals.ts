@@ -46,7 +46,9 @@ export class PlayerVitals {
   }
 
   restoreHp(amount: number) {
+    const previousHp = this.state.hp;
     this.state.hp = Math.min(this.state.maxHp, this.state.hp + Math.max(0, amount));
+    return this.state.hp - previousHp;
   }
 
   restoreShield(amount: number) {

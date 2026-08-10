@@ -11,6 +11,7 @@ import type {
 } from '../../game/content/enemies/enemyDefinitions';
 import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
 import type { FoodKey } from '../../game/simulation/FoodRecovery';
+import { rollFoodDrop } from '../../game/simulation/FoodDropSystem';
 import { InfiniteWorldSystem } from '../../game/simulation/InfiniteWorld';
 import type { WorldChunkState, WorldObstacleState } from '../../game/simulation/InfiniteWorld';
 import { MapProgression } from '../../game/simulation/MapProgression';
@@ -94,6 +95,7 @@ import {
   updateVitals,
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
+import { playFoodPickup } from '../view/fx/playFoodPickup';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
 import {
   createPlayerShieldView,
@@ -934,16 +936,43 @@ export class GameScene extends Phaser.Scene {
 
   private spawnFood() {
     if (this.ended) return;
+    const point = this.getSpawnPoint(250);
+    const foodKey = foodKeys[Phaser.Math.Between(0, foodKeys.length - 1)];
+    this.spawnFoodAt(point.x, point.y, foodKey);
+  }
+
+  private spawnFoodAt(x: number, y: number, foodKey: FoodKey) {
     const budget = getMonsterSpawnProfile(this.mapProgression.state.level);
     const activeFoods = this.foods.children.entries.filter(child => child.active);
     if (activeFoods.length >= budget.maxActiveFoods) activeFoods[0]?.destroy();
-    const index = Phaser.Math.Between(0, foodKeys.length - 1);
-    const point = this.getSpawnPoint(250);
-    const food = this.physics.add.image(point.x, point.y, foodKeys[index]) as FoodSprite;
+    const recovery = getFoodRecovery(foodKey);
+    const displaySize = recovery >= 2 ? 38 : 32;
+    const food = this.physics.add.image(x, y, foodKey) as FoodSprite;
     food.foodId = `food-${this.foodId++}`;
-    food.foodKey = foodKeys[index];
+    food.foodKey = foodKey;
     food.expiresAt = this.gameplayTime + 9000;
+    food.setDepth(1.5).setDisplaySize(displaySize, displaySize);
+    const targetScaleX = food.scaleX;
+    const targetScaleY = food.scaleY;
+    food.setScale(targetScaleX * 0.35, targetScaleY * 0.35).setAlpha(0.2);
     this.foods.add(food);
+    food.once(Phaser.GameObjects.Events.DESTROY, () => this.tweens.killTweensOf(food));
+    this.tweens.add({
+      targets: food,
+      scaleX: targetScaleX,
+      scaleY: targetScaleY,
+      alpha: 1,
+      duration: 180,
+      ease: 'Back.Out',
+    });
+    this.tweens.add({
+      targets: food,
+      y: y - 6,
+      duration: 700,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+    });
   }
 
   private resetMonsterSpawnTimer() {
@@ -1284,6 +1313,12 @@ export class GameScene extends Phaser.Scene {
       this.progression.state.level,
       this.mapProgression.state.level,
     );
+    const droppedFood = rollFoodDrop(monster.combat.kind, rewardProfile, {
+      drop: Phaser.Math.RND.frac(),
+      quality: Phaser.Math.RND.frac(),
+      item: Phaser.Math.RND.frac(),
+    });
+    if (droppedFood) this.spawnFoodAt(monster.x, monster.y, droppedFood);
     const wasMaxLevel = this.progression.state.level >= this.progression.state.maxLevel;
     let mapLevelAdvanced = false;
     if (isBoss) {
@@ -1777,8 +1812,12 @@ export class GameScene extends Phaser.Scene {
   private onFoodEat: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (playerObject, foodObject) => {
     const food = foodObject as unknown as FoodSprite;
     if (this.vitals.state.hp >= this.vitals.state.maxHp) return;
+    const recovery = getFoodRecovery(food.foodKey);
+    const pickupX = food.x;
+    const pickupY = food.y;
     food.destroy();
-    this.vitals.restoreHp(getFoodRecovery(food.foodKey));
+    const restoredHp = this.vitals.restoreHp(recovery);
+    if (restoredHp > 0) playFoodPickup(this, pickupX, pickupY, restoredHp);
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
