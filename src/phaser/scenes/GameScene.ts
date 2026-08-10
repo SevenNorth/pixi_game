@@ -56,6 +56,7 @@ import type {
 } from '../../game/simulation/PlayerSkillSystem';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
 import { PLAYER_INVULNERABILITY_MS, PlayerVitals } from '../../game/simulation/PlayerVitals';
+import { isSkillLoadoutSafe } from '../../game/simulation/SkillLoadoutSafety';
 import {
   isPointWithinSegmentRadius,
   resolveSkillTarget,
@@ -72,6 +73,7 @@ import {
   hideLevelUp,
   hideMenu,
   hideRewardChoice,
+  hideSkillLoadout,
   showHud,
   showBossAppeared,
   showBossPhaseTwo,
@@ -82,6 +84,8 @@ import {
   showMenu,
   showPassiveReplacementChoice,
   showRewardChoice,
+  showSkillLoadout,
+  showSkillLoadoutUnavailable,
   updateHud,
   updateMapProgression,
   updatePassiveSkills,
@@ -164,6 +168,9 @@ export class GameScene extends Phaser.Scene {
   private ended = false;
   private paused = false;
   private rewardPauseActive = false;
+  private skillLoadoutOpen = false;
+  private skillLoadoutWasPaused = false;
+  private selectedLoadoutSkillId: PlayerSkillId | null = null;
   private suppressCombatInputFrames = 0;
   private lastShotAt = -Infinity;
   private lockedTargetId: string | null = null;
@@ -197,6 +204,9 @@ export class GameScene extends Phaser.Scene {
     this.ended = false;
     this.paused = false;
     this.rewardPauseActive = false;
+    this.skillLoadoutOpen = false;
+    this.skillLoadoutWasPaused = false;
+    this.selectedLoadoutSkillId = null;
     this.suppressCombatInputFrames = 0;
     this.killed = 0;
     this.gameplayTime = 0;
@@ -219,10 +229,12 @@ export class GameScene extends Phaser.Scene {
     hideMenu();
     hideLevelUp();
     hideRewardChoice();
+    hideSkillLoadout();
     window.addEventListener('restart-game', this.restart, { once: true });
     window.addEventListener('reward-choice-selected', this.onRewardChoiceSelected);
     window.addEventListener('reward-resolution-action', this.onRewardResolutionAction);
-    window.addEventListener('keydown', this.onRewardKeyDown);
+    window.addEventListener('skill-loadout-action', this.onSkillLoadoutAction);
+    window.addEventListener('keydown', this.onOverlayKeyDown);
     showHud();
     updateHud(this.killed);
     this.updateMapProgressionHud();
@@ -297,13 +309,23 @@ export class GameScene extends Phaser.Scene {
     window.removeEventListener('restart-game', this.restart);
     window.removeEventListener('reward-choice-selected', this.onRewardChoiceSelected);
     window.removeEventListener('reward-resolution-action', this.onRewardResolutionAction);
-    window.removeEventListener('keydown', this.onRewardKeyDown);
+    window.removeEventListener('skill-loadout-action', this.onSkillLoadoutAction);
+    window.removeEventListener('keydown', this.onOverlayKeyDown);
     hideRewardChoice();
+    hideSkillLoadout();
   }
 
   update(_time: number, delta: number) {
     const inputFrame = this.inputController.readFrame();
     if (this.rewardChoices.state.active) return;
+    if (this.skillLoadoutOpen) {
+      if (inputFrame.loadoutPressed) this.closeSkillLoadout();
+      return;
+    }
+    if (inputFrame.loadoutPressed && !this.ended) {
+      this.openSkillLoadout();
+      return;
+    }
     if (this.suppressCombatInputFrames > 0) {
       this.suppressCombatInputFrames -= 1;
       return;
@@ -1389,7 +1411,29 @@ export class GameScene extends Phaser.Scene {
     if (detail?.action) this.handleRewardResolutionAction(detail.action, detail.value);
   };
 
-  private onRewardKeyDown = (event: KeyboardEvent) => {
+  private onOverlayKeyDown = (event: KeyboardEvent) => {
+    if (this.skillLoadoutOpen) {
+      const numericIndex = /^\d$/.test(event.key) ? Number(event.key) - 1 : -1;
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        this.closeSkillLoadout();
+      } else if (numericIndex >= 0) {
+        const skill = this.playerSkills.state.learned[numericIndex];
+        if (skill) {
+          event.preventDefault();
+          this.selectedLoadoutSkillId = skill.id;
+          this.presentSkillLoadout();
+        }
+      } else {
+        const slot = ({ q: 0, e: 1, r: 2 } as const)[event.key.toLowerCase() as 'q' | 'e' | 'r'];
+        if (slot !== undefined) {
+          event.preventDefault();
+          this.equipSelectedLoadoutSkill(slot);
+        }
+      }
+      return;
+    }
+
     const choice = this.rewardChoices.state.active;
     if (!choice) return;
     const resolution = this.rewardChoices.state.resolution;
@@ -1437,6 +1481,100 @@ export class GameScene extends Phaser.Scene {
       if (skillId) this.handleRewardResolutionAction('select-active-forget', skillId);
     }
   };
+
+  private onSkillLoadoutAction = (event: Event) => {
+    const detail = (event as CustomEvent<{
+      action?: string;
+      value?: number | string;
+    }>).detail;
+    if (!this.skillLoadoutOpen || !detail?.action) return;
+    if (detail.action === 'close') {
+      this.closeSkillLoadout();
+    } else if (detail.action === 'select' && typeof detail.value === 'string') {
+      const skill = this.playerSkills.getLearnedSkill(detail.value as PlayerSkillId);
+      if (!skill) return;
+      this.selectedLoadoutSkillId = skill.id;
+      this.presentSkillLoadout();
+    } else if (detail.action === 'equip' && typeof detail.value === 'number') {
+      this.equipSelectedLoadoutSkill(detail.value);
+    }
+  };
+
+  private openSkillLoadout() {
+    if (this.ended || this.rewardChoices.state.active) return;
+    if (!this.isSafeToChangeSkillLoadout()) {
+      showSkillLoadoutUnavailable();
+      return;
+    }
+    this.selectedLoadoutSkillId = this.playerSkills.state.learned.find(
+      skill => !this.playerSkills.state.equipped.includes(skill.id),
+    )?.id ?? this.playerSkills.state.learned[0]?.id ?? null;
+    this.skillLoadoutWasPaused = this.paused;
+    this.skillLoadoutOpen = true;
+    if (!this.paused) this.setGamePaused(true);
+    this.presentSkillLoadout();
+  }
+
+  private closeSkillLoadout() {
+    if (!this.skillLoadoutOpen) return;
+    const shouldResume = !this.skillLoadoutWasPaused;
+    this.skillLoadoutOpen = false;
+    this.skillLoadoutWasPaused = false;
+    this.selectedLoadoutSkillId = null;
+    hideSkillLoadout();
+    this.suppressCombatInputFrames = 1;
+    if (shouldResume) this.setGamePaused(false);
+  }
+
+  private presentSkillLoadout() {
+    showSkillLoadout(
+      this.playerSkills.state.learned,
+      this.playerSkills.state.equipped,
+      this.selectedLoadoutSkillId,
+    );
+  }
+
+  private equipSelectedLoadoutSkill(slot: number) {
+    if (slot < 0 || slot > 2 || !this.selectedLoadoutSkillId) return;
+    if (!this.isSafeToChangeSkillLoadout()) {
+      this.closeSkillLoadout();
+      showSkillLoadoutUnavailable();
+      return;
+    }
+    const equipped = this.playerSkills.equipSkill(
+      this.selectedLoadoutSkillId,
+      slot as ActiveSkillSlotIndex,
+      this.gameplayTime,
+      true,
+    );
+    if (!equipped) return;
+    updateSkillSlots(this.playerSkills.getSlotStates(this.gameplayTime));
+    this.presentSkillLoadout();
+  }
+
+  private isSafeToChangeSkillLoadout() {
+    const threats = this.monsters.children.entries
+      .map(child => child as MonsterSprite)
+      .filter(monster => monster.active && !monster.getData('defeated'))
+      .map(monster => {
+        const definition = getEnemyDefinition(monster.combat.kind);
+        return {
+          kind: monster.combat.kind,
+          aggro: monster.combat.aggro,
+          distance: Phaser.Math.Distance.Between(
+            monster.x,
+            monster.y,
+            this.player.x,
+            this.player.y,
+          ),
+          safeDistance: definition.aggroEnterDistance + 80,
+        };
+      });
+    const hasEnemyProjectiles = this.projectiles.children.entries.some(child => (
+      child.active && (child as ProjectileView).projectile?.faction === 'enemy'
+    ));
+    return isSkillLoadoutSafe({ threats, hasEnemyProjectiles });
+  }
 
   private selectRewardByIndex(index: number) {
     const candidate = this.rewardChoices.state.active?.candidates[index];

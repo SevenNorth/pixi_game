@@ -20,6 +20,7 @@ type InputKey =
   | 'skill3Primary'
   | 'skill3Secondary'
   | 'skill3Tertiary'
+  | 'loadout'
   | 'pause'
   | 'restart';
 
@@ -47,6 +48,7 @@ export class PhaserInputController {
       skill3Primary: keyCodes.R,
       skill3Secondary: keyCodes.L,
       skill3Tertiary: keyCodes.THREE,
+      loadout: keyCodes.I,
       pause: keyCodes.P,
       restart: keyCodes.R,
     }) as Record<InputKey, Phaser.Input.Keyboard.Key>;
@@ -80,6 +82,7 @@ export class PhaserInputController {
         'skill-2': skill2Pressed,
         'skill-3': skill3Pressed,
       },
+      loadoutPressed: this.consumePress(this.keys.loadout),
       pausePressed: this.consumePress(this.keys.pause),
       restartPressed: this.consumePress(this.keys.restart),
     };

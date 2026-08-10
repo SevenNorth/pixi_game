@@ -5,6 +5,7 @@ export interface GameInputFrame {
   vertical: number;
   basicAttackHeld: boolean;
   skillPressed: Record<SkillAction, boolean>;
+  loadoutPressed: boolean;
   pausePressed: boolean;
   restartPressed: boolean;
 }

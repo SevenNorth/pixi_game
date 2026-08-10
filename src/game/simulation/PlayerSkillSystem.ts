@@ -120,10 +120,13 @@ export class PlayerSkillSystem {
     const learned = this.getLearnedSkill(skillId);
     const runtime = this.runtimes.get(skillId);
     if (!learned || !runtime) return false;
+    const currentSlot = this.state.equipped.indexOf(skillId);
+    if (currentSlot === slot) return true;
 
-    this.state.equipped = this.state.equipped.map(id => (
-      id === skillId ? null : id
-    )) as PlayerSkillState['equipped'];
+    const replacedSkill = this.state.equipped[slot];
+    if (currentSlot >= 0) {
+      this.state.equipped[currentSlot as ActiveSkillSlotIndex] = replacedSkill;
+    }
     this.state.equipped[slot] = skillId;
     startSkillCooldown(
       getPlayerSkillDefinition(skillId, learned.level, this.cooldownMultiplier),

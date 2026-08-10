@@ -42,6 +42,9 @@ let rewardChoice: HTMLElement;
 let rewardChoiceSource: HTMLElement;
 let rewardChoicePending: HTMLElement;
 let rewardChoiceOptions: HTMLElement;
+let skillLoadout: HTMLElement;
+let skillLoadoutSlots: HTMLElement;
+let skillLoadoutSkills: HTMLElement;
 let levelUpTimer: number | undefined;
 let noticeActive = false;
 const noticeQueue: Array<{ kicker: string; title: string }> = [];
@@ -101,6 +104,25 @@ export function initDomHud(container: HTMLElement) {
         <div id="reward-choice-options" class="reward-choice-options"></div>
       </div>
     </div>
+    <div id="skill-loadout" class="skill-loadout" role="dialog" aria-modal="true" aria-labelledby="skill-loadout-title" hidden>
+      <div class="skill-loadout-panel">
+        <div class="skill-loadout-header">
+          <div>
+            <div class="skill-loadout-kicker">${t('skillLoadoutSafe')}</div>
+            <div id="skill-loadout-title" class="skill-loadout-title">${t('skillLoadoutTitle')}</div>
+          </div>
+          <button id="skill-loadout-close" class="skill-loadout-close" type="button" title="${t('close')}" aria-label="${t('close')}">×</button>
+        </div>
+        <section class="skill-loadout-section">
+          <div class="skill-loadout-section-title">${t('skillLoadoutSlots')}</div>
+          <div id="skill-loadout-slots" class="skill-loadout-slots"></div>
+        </section>
+        <section class="skill-loadout-section">
+          <div class="skill-loadout-section-title">${t('skillLoadoutLearned')}</div>
+          <div id="skill-loadout-skills" class="skill-loadout-skills"></div>
+        </section>
+      </div>
+    </div>
     <div id="skill-dock" class="skill-dock" hidden>
       <div id="passive-skill-slots" class="passive-skill-slots" aria-label="Passive skills">
         ${Array.from({ length: 4 }, () => `
@@ -144,12 +166,19 @@ export function initDomHud(container: HTMLElement) {
   rewardChoiceSource = root.querySelector('#reward-choice-source') as HTMLElement;
   rewardChoicePending = root.querySelector('#reward-choice-pending') as HTMLElement;
   rewardChoiceOptions = root.querySelector('#reward-choice-options') as HTMLElement;
+  skillLoadout = root.querySelector('#skill-loadout') as HTMLElement;
+  skillLoadoutSlots = root.querySelector('#skill-loadout-slots') as HTMLElement;
+  skillLoadoutSkills = root.querySelector('#skill-loadout-skills') as HTMLElement;
   const startButton = root.querySelector('#start-game') as HTMLButtonElement;
   const restartButton = root.querySelector('#restart-game') as HTMLButtonElement;
   startButton.style.backgroundImage = `url(${getAssetUrl('start')})`;
   restartButton.style.backgroundImage = `url(${getAssetUrl('restart')})`;
   startButton.addEventListener('click', () => window.dispatchEvent(new Event('start-game')));
   restartButton.addEventListener('click', () => window.dispatchEvent(new Event('restart-game')));
+  (root.querySelector('#skill-loadout-close') as HTMLButtonElement).addEventListener(
+    'click',
+    () => dispatchSkillLoadoutAction('close'),
+  );
   hideHud();
 }
 
@@ -220,6 +249,68 @@ export function showRewardChoice(choice: RewardChoice, pendingCount: number) {
 export function hideRewardChoice() {
   rewardChoice.hidden = true;
   rewardChoiceOptions.replaceChildren();
+}
+
+export function showSkillLoadout(
+  learned: readonly LearnedPlayerSkill[],
+  equipped: readonly (PlayerSkillId | null)[],
+  selectedSkillId: PlayerSkillId | null,
+) {
+  const slotKeys = ['Q', 'E', 'R'];
+  skillLoadoutSlots.replaceChildren(...equipped.map((skillId, index) => {
+    const learnedSkill = skillId ? learned.find(skill => skill.id === skillId) : undefined;
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'skill-loadout-slot';
+    button.dataset.empty = String(!learnedSkill);
+    button.dataset.selected = String(Boolean(selectedSkillId && skillId === selectedSkillId));
+    button.innerHTML = `
+      <span class="skill-loadout-slot-key">${slotKeys[index]}</span>
+      <span class="skill-loadout-slot-name">${
+        learnedSkill ? t(playerSkillNameKeys[learnedSkill.id]) : t('emptySkill')
+      }</span>
+      <span class="skill-loadout-slot-level">${learnedSkill ? `Lv.${learnedSkill.level}` : ''}</span>
+    `;
+    button.addEventListener('click', () => dispatchSkillLoadoutAction('equip', index));
+    return button;
+  }));
+
+  skillLoadoutSkills.replaceChildren(...learned.map((skill, index) => {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'skill-loadout-skill';
+    button.dataset.selected = String(skill.id === selectedSkillId);
+    button.dataset.equipped = String(equipped.includes(skill.id));
+    button.innerHTML = `
+      <span class="skill-loadout-skill-key">${index + 1}</span>
+      <span class="skill-loadout-skill-name">${t(playerSkillNameKeys[skill.id])}</span>
+      <span class="skill-loadout-skill-level">Lv.${skill.level}</span>
+      <span class="skill-loadout-skill-effect">${getActiveSkillEffectText(skill.id, skill.level)}</span>
+      <span class="skill-loadout-skill-state">${
+        equipped.includes(skill.id) ? t('skillLoadoutEquipped') : t('skillLoadoutStored')
+      }</span>
+    `;
+    button.addEventListener('click', () => dispatchSkillLoadoutAction('select', skill.id));
+    return button;
+  }));
+  skillLoadout.hidden = false;
+  (skillLoadoutSkills.querySelector('[data-selected="true"]') as HTMLButtonElement | null)?.focus();
+}
+
+export function hideSkillLoadout() {
+  skillLoadout.hidden = true;
+  skillLoadoutSlots.replaceChildren();
+  skillLoadoutSkills.replaceChildren();
+}
+
+export function showSkillLoadoutUnavailable() {
+  enqueueNotice(t('skillLoadoutBlocked'), t('skillLoadoutBlockedDetail'));
+}
+
+function dispatchSkillLoadoutAction(action: string, value?: number | string) {
+  window.dispatchEvent(new CustomEvent('skill-loadout-action', {
+    detail: { action, value },
+  }));
 }
 
 export function showActiveEquipChoice(
@@ -418,9 +509,13 @@ function getRewardCandidateEffect(candidate: RewardCandidate) {
     return t('rewardCooldownEffect', { value: Math.round(value * 100) });
   }
 
-  const definition = getPlayerSkillDefinition(candidate.skillId, candidate.nextLevel);
-  const effect = getPlayerSkillEffect(candidate.skillId, candidate.nextLevel);
-  if (candidate.skillId === 'lightning-bolt') {
+  return getActiveSkillEffectText(candidate.skillId, candidate.nextLevel);
+}
+
+function getActiveSkillEffectText(skillId: PlayerSkillId, level: number) {
+  const definition = getPlayerSkillDefinition(skillId, level);
+  const effect = getPlayerSkillEffect(skillId, level);
+  if (skillId === 'lightning-bolt') {
     if (effect.type !== 'projectile') return '';
     return t('rewardLightningEffect', {
       damage: definition.damageMultiplier.toFixed(2),
@@ -430,7 +525,7 @@ function getRewardCandidateEffect(candidate: RewardCandidate) {
       cooldown: (definition.cooldownMs / 1000).toFixed(2),
     });
   }
-  if (candidate.skillId === 'thunder-dash') {
+  if (skillId === 'thunder-dash') {
     if (effect.type !== 'dash') return '';
     const invulnerability = effect.invulnerabilityMs > 0
       ? t('rewardDashInvulnerability', {
