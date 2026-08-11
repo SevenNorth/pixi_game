@@ -5,7 +5,7 @@ export interface MonsterSpawnProfile {
   maxTotalMinionSpawns: number;
   spawnIntervalMs: number;
   maxActiveProjectiles: number;
-  maxActiveFoods: number;
+  maxActiveRecoveryPickups: number;
   normalWeight: number;
   eliteWeight: number;
 }
@@ -25,7 +25,7 @@ const STARTING_SPAWN_INTERVAL_MS = 3000;
 const SPAWN_INTERVAL_REDUCTION_PER_MAP_LEVEL_MS = 140;
 const MIN_SPAWN_INTERVAL_MS = 1200;
 const MAX_ACTIVE_PROJECTILES = 180;
-const MAX_ACTIVE_FOODS = 16;
+const MAX_ACTIVE_RECOVERY_PICKUPS = 16;
 const STARTING_ELITE_WEIGHT = 0.1;
 const ELITE_WEIGHT_PER_MAP_LEVEL = 0.05;
 const MAX_ELITE_WEIGHT = 0.4;
@@ -57,7 +57,7 @@ export function getMonsterSpawnProfile(mapLevel: number): MonsterSpawnProfile {
         - (normalizedMapLevel - 1) * SPAWN_INTERVAL_REDUCTION_PER_MAP_LEVEL_MS,
     ),
     maxActiveProjectiles: MAX_ACTIVE_PROJECTILES,
-    maxActiveFoods: MAX_ACTIVE_FOODS,
+    maxActiveRecoveryPickups: MAX_ACTIVE_RECOVERY_PICKUPS,
     normalWeight: 1 - eliteWeight,
     eliteWeight,
   };

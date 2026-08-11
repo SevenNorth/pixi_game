@@ -12,6 +12,11 @@ import type {
 import { getFoodRecovery } from '../../game/simulation/FoodRecovery';
 import type { FoodKey } from '../../game/simulation/FoodRecovery';
 import { rollFoodDrop } from '../../game/simulation/FoodDropSystem';
+import {
+  getShieldRecovery,
+  rollShieldDrop,
+} from '../../game/simulation/ShieldDropSystem';
+import type { ShieldPickupKind } from '../../game/simulation/ShieldDropSystem';
 import { InfiniteWorldSystem } from '../../game/simulation/InfiniteWorld';
 import type { WorldChunkState, WorldObstacleState } from '../../game/simulation/InfiniteWorld';
 import { MapProgression } from '../../game/simulation/MapProgression';
@@ -97,6 +102,7 @@ import {
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playFoodPickup } from '../view/fx/playFoodPickup';
+import { playShieldPickup } from '../view/fx/playShieldPickup';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
 import {
   createPlayerShieldView,
@@ -127,6 +133,7 @@ import {
   updateBossOffscreenIndicator,
 } from '../view/ui/BossOffscreenIndicator';
 import type { BossOffscreenIndicator } from '../view/ui/BossOffscreenIndicator';
+import { ensureShieldPickupTexture } from '../view/pickups/ShieldPickupView';
 import { ensureObstacleTexture } from '../view/world/createObstacleTexture';
 
 const BULLET_SPEED = 420;
@@ -147,6 +154,14 @@ interface FoodSprite extends Phaser.Physics.Arcade.Image {
   foodId: string;
   foodKey: FoodKey;
   expiresAt: number;
+  spawnedAt: number;
+}
+
+interface ShieldPickupSprite extends Phaser.Physics.Arcade.Image {
+  pickupId: string;
+  pickupKind: ShieldPickupKind;
+  expiresAt: number;
+  spawnedAt: number;
 }
 
 interface ObstacleSprite extends Phaser.Physics.Arcade.Image {
@@ -158,6 +173,7 @@ export class GameScene extends Phaser.Scene {
   private player!: Phaser.Physics.Arcade.Sprite;
   private monsters!: Phaser.Physics.Arcade.Group;
   private foods!: Phaser.Physics.Arcade.Group;
+  private shieldPickups!: Phaser.Physics.Arcade.Group;
   private projectiles!: Phaser.Physics.Arcade.Group;
   private walls!: Phaser.Physics.Arcade.StaticGroup;
   private bushes!: Phaser.Physics.Arcade.StaticGroup;
@@ -168,6 +184,7 @@ export class GameScene extends Phaser.Scene {
   private bulletId = 0;
   private monsterId = 0;
   private foodId = 0;
+  private shieldPickupId = 0;
   private ended = false;
   private paused = false;
   private rewardPauseActive = false;
@@ -276,6 +293,7 @@ export class GameScene extends Phaser.Scene {
 
     this.monsters = this.physics.add.group();
     this.foods = this.physics.add.group();
+    this.shieldPickups = this.physics.add.group();
     this.projectiles = this.physics.add.group();
     this.walls = this.physics.add.staticGroup();
     this.bushes = this.physics.add.staticGroup();
@@ -291,6 +309,13 @@ export class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.projectiles, this.monsters, this.onProjectileHitMonster, undefined, this);
     this.physics.add.overlap(this.projectiles, this.player, this.onProjectileHitPlayer, undefined, this);
     this.physics.add.overlap(this.player, this.foods, this.onFoodEat, undefined, this);
+    this.physics.add.overlap(
+      this.player,
+      this.shieldPickups,
+      this.onShieldPickup,
+      undefined,
+      this,
+    );
     this.physics.add.overlap(this.player, this.monsters, this.onMonsterCatch, undefined, this);
     this.physics.add.collider(this.player, this.walls);
     this.physics.add.collider(this.monsters, this.walls);
@@ -475,6 +500,11 @@ export class GameScene extends Phaser.Scene {
     this.foods.children.each(child => {
       const food = child as FoodSprite;
       if (this.gameplayTime > food.expiresAt) food.destroy();
+      return null;
+    });
+    this.shieldPickups.children.each(child => {
+      const pickup = child as ShieldPickupSprite;
+      if (this.gameplayTime > pickup.expiresAt) pickup.destroy();
       return null;
     });
     updateBossOffscreenIndicator(
@@ -948,15 +978,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnFoodAt(x: number, y: number, foodKey: FoodKey) {
-    const budget = getMonsterSpawnProfile(this.mapProgression.state.level);
-    const activeFoods = this.foods.children.entries.filter(child => child.active);
-    if (activeFoods.length >= budget.maxActiveFoods) activeFoods[0]?.destroy();
+    this.reserveRecoveryPickupSlot();
     const recovery = getFoodRecovery(foodKey);
     const displaySize = recovery >= 2 ? 38 : 32;
     const food = this.physics.add.image(x, y, foodKey) as FoodSprite;
     food.foodId = `food-${this.foodId++}`;
     food.foodKey = foodKey;
     food.expiresAt = this.gameplayTime + 9000;
+    food.spawnedAt = this.gameplayTime;
     food.setDepth(1.5).setDisplaySize(displaySize, displaySize);
     const targetScaleX = food.scaleX;
     const targetScaleY = food.scaleY;
@@ -979,6 +1008,54 @@ export class GameScene extends Phaser.Scene {
       repeat: -1,
       ease: 'Sine.InOut',
     });
+  }
+
+  private spawnShieldPickupAt(x: number, y: number, pickupKind: ShieldPickupKind) {
+    this.reserveRecoveryPickupSlot();
+    const recovery = getShieldRecovery(pickupKind);
+    const textureKey = ensureShieldPickupTexture(this, pickupKind);
+    const pickup = this.physics.add.image(x, y, textureKey) as ShieldPickupSprite;
+    pickup.pickupId = `shield-pickup-${this.shieldPickupId++}`;
+    pickup.pickupKind = pickupKind;
+    pickup.expiresAt = this.gameplayTime + 10000;
+    pickup.spawnedAt = this.gameplayTime;
+    pickup.setDepth(1.6).setDisplaySize(recovery >= 1 ? 38 : 32, recovery >= 1 ? 38 : 32);
+    pickup.setCircle(14, 6, 6);
+    const targetScaleX = pickup.scaleX;
+    const targetScaleY = pickup.scaleY;
+    pickup.setScale(targetScaleX * 0.35, targetScaleY * 0.35).setAlpha(0.2);
+    this.shieldPickups.add(pickup);
+    pickup.once(Phaser.GameObjects.Events.DESTROY, () => this.tweens.killTweensOf(pickup));
+    this.tweens.add({
+      targets: pickup,
+      scaleX: targetScaleX,
+      scaleY: targetScaleY,
+      alpha: 1,
+      duration: 180,
+      ease: 'Back.Out',
+    });
+    this.tweens.add({
+      targets: pickup,
+      y: y - 7,
+      duration: 760,
+      yoyo: true,
+      repeat: -1,
+      ease: 'Sine.InOut',
+    });
+  }
+
+  private reserveRecoveryPickupSlot() {
+    const maxActivePickups = getMonsterSpawnProfile(
+      this.mapProgression.state.level,
+    ).maxActiveRecoveryPickups;
+    const activePickups = [
+      ...this.foods.children.entries,
+      ...this.shieldPickups.children.entries,
+    ].filter(child => child.active) as Array<FoodSprite | ShieldPickupSprite>;
+    if (activePickups.length < maxActivePickups) return;
+    activePickups.reduce((oldest, pickup) => (
+      pickup.spawnedAt < oldest.spawnedAt ? pickup : oldest
+    )).destroy();
   }
 
   private resetMonsterSpawnTimer() {
@@ -1063,9 +1140,14 @@ export class GameScene extends Phaser.Scene {
       return monster.active && Phaser.Math.Distance.Between(x, y, monster.x, monster.y) < clearance;
     });
     if (occupiedByMonster) return false;
-    return !this.foods.children.entries.some(child => {
+    const occupiedByFood = this.foods.children.entries.some(child => {
       const food = child as FoodSprite;
       return food.active && Phaser.Math.Distance.Between(x, y, food.x, food.y) < clearance;
+    });
+    if (occupiedByFood) return false;
+    return !this.shieldPickups.children.entries.some(child => {
+      const pickup = child as ShieldPickupSprite;
+      return pickup.active && Phaser.Math.Distance.Between(x, y, pickup.x, pickup.y) < clearance;
     });
   }
 
@@ -1340,6 +1422,14 @@ export class GameScene extends Phaser.Scene {
       item: Phaser.Math.RND.frac(),
     });
     if (droppedFood) this.spawnFoodAt(monster.x, monster.y, droppedFood);
+    const droppedShield = rollShieldDrop(monster.combat.kind, rewardProfile, {
+      drop: Phaser.Math.RND.frac(),
+      quality: Phaser.Math.RND.frac(),
+    });
+    if (droppedShield) {
+      const offsetX = droppedFood ? 22 : 0;
+      this.spawnShieldPickupAt(monster.x + offsetX, monster.y, droppedShield);
+    }
     const wasMaxLevel = this.progression.state.level >= this.progression.state.maxLevel;
     let mapLevelAdvanced = false;
     if (isBoss) {
@@ -1846,6 +1936,27 @@ export class GameScene extends Phaser.Scene {
       this.vitals.state.maxShield,
     );
     updateHud(this.killed);
+    void playerObject;
+  };
+
+  private onShieldPickup: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (
+    playerObject,
+    pickupObject,
+  ) => {
+    const pickup = pickupObject as unknown as ShieldPickupSprite;
+    if (this.vitals.state.shield >= this.vitals.state.maxShield) return;
+    const recovery = getShieldRecovery(pickup.pickupKind);
+    const pickupX = pickup.x;
+    const pickupY = pickup.y;
+    pickup.destroy();
+    const restoredShield = this.vitals.restoreShield(recovery);
+    if (restoredShield > 0) playShieldPickup(this, pickupX, pickupY, restoredShield);
+    updateVitals(
+      this.vitals.state.hp,
+      this.vitals.state.maxHp,
+      this.vitals.state.shield,
+      this.vitals.state.maxShield,
+    );
     void playerObject;
   };
 

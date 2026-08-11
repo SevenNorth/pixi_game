@@ -52,7 +52,9 @@ export class PlayerVitals {
   }
 
   restoreShield(amount: number) {
+    const previousShield = this.state.shield;
     this.state.shield = Math.min(this.state.maxShield, this.state.shield + Math.max(0, amount));
+    return this.state.shield - previousShield;
   }
 
   adjustMaxShield(amount: number) {

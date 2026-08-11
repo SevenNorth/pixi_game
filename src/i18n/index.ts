@@ -2,6 +2,7 @@ const messages = {
   'zh-CN': {
     hp: '生命',
     shield: '护盾',
+    shieldPickupValue: '+{points} 护盾',
     level: '等级 {level}',
     mapLevel: '地图等级 {level}',
     killed: '击杀：{killed}',
@@ -77,6 +78,7 @@ const messages = {
   en: {
     hp: 'HP',
     shield: 'SHIELD',
+    shieldPickupValue: '+{points} SHIELD',
     level: 'LV {level}',
     mapLevel: 'MAP LV {level}',
     killed: 'KILLED: {killed}',
