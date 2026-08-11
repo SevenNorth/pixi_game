@@ -543,6 +543,36 @@ function getActiveSkillEffectText(skillId: PlayerSkillId, level: number) {
       bonus: `${invulnerability}${pathDamage}`,
     });
   }
+  if (skillId === 'thunder-strike') {
+    if (effect.type !== 'delayed-area') return '';
+    return t('rewardThunderStrikeEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      radius: effect.radius,
+      strikes: effect.strikeCount,
+      delay: (effect.delayMs / 1000).toFixed(2),
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  if (skillId === 'chain-lightning') {
+    if (effect.type !== 'chain') return '';
+    return t('rewardChainLightningEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      jumps: effect.jumps,
+      range: effect.jumpRange,
+      retained: Math.round(effect.retainedDamage * 100),
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  if (skillId === 'static-field') {
+    if (effect.type !== 'field') return '';
+    return t('rewardStaticFieldEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      radius: effect.radius,
+      duration: (effect.durationMs / 1000).toFixed(1),
+      slow: Math.round((1 - effect.slowMultiplier) * 100),
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
   if (effect.type !== 'shield') return '';
   const protection = effect.protectionMs > 0
     ? t('rewardShieldProtection', {
@@ -647,6 +677,9 @@ const playerSkillNameKeys: Record<PlayerSkillId, MessageKey> = {
   'lightning-bolt': 'lightningBolt',
   'thunder-dash': 'thunderDash',
   'storm-shield': 'stormShield',
+  'thunder-strike': 'thunderStrike',
+  'chain-lightning': 'chainLightning',
+  'static-field': 'staticField',
 };
 
 const passiveSkillNameKeys: Record<PassiveSkillId, MessageKey> = {

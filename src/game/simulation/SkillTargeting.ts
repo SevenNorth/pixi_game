@@ -25,6 +25,33 @@ export interface ResolvedSkillTarget {
   targetId?: string;
 }
 
+export function resolveChainTargetIds(
+  initialTargetId: string,
+  candidates: readonly SkillTargetCandidate[],
+  maxTargets: number,
+  jumpRange: number,
+) {
+  const targetById = new Map(candidates.filter(candidate => candidate.active).map(target => [target.id, target]));
+  const initialTarget = targetById.get(initialTargetId);
+  if (!initialTarget) return [];
+  const selected = [initialTarget];
+  const selectedIds = new Set([initialTarget.id]);
+  const jumpRangeSquared = Math.max(0, jumpRange) ** 2;
+
+  while (selected.length < Math.max(1, Math.floor(maxTargets))) {
+    const previous = selected[selected.length - 1];
+    const next = Array.from(targetById.values())
+      .filter(candidate => !selectedIds.has(candidate.id))
+      .map(candidate => ({ candidate, distanceSquared: distanceSquared(previous, candidate) }))
+      .filter(entry => entry.distanceSquared <= jumpRangeSquared)
+      .sort((left, right) => left.distanceSquared - right.distanceSquared)[0]?.candidate;
+    if (!next) break;
+    selected.push(next);
+    selectedIds.add(next.id);
+  }
+  return selected.map(target => target.id);
+}
+
 export function resolveSkillTarget(
   targeting: SkillTargeting,
   context: SkillTargetContext,

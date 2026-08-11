@@ -62,11 +62,17 @@ import type {
   PlayerSkillRuntimeEvent,
 } from '../../game/simulation/PlayerSkillSystem';
 import { attackForLevel } from '../../game/simulation/PlayerCombatStats';
+import {
+  getFieldSlowMultiplierAt,
+  PlayerAreaEffectSystem,
+} from '../../game/simulation/PlayerAreaEffectSystem';
+import type { PlayerAreaEffectEvent } from '../../game/simulation/PlayerAreaEffectSystem';
 import { combatBalance } from '../../game/content/combatBalance';
 import { PLAYER_INVULNERABILITY_MS, PlayerVitals } from '../../game/simulation/PlayerVitals';
 import { isSkillLoadoutSafe } from '../../game/simulation/SkillLoadoutSafety';
 import {
   isPointWithinSegmentRadius,
+  resolveChainTargetIds,
   resolveSkillTarget,
 } from '../../game/simulation/SkillTargeting';
 import {
@@ -115,6 +121,12 @@ import {
   playEnemySkillImpact,
   playEnemyWarning,
 } from '../view/fx/playEnemyWarning';
+import {
+  createStaticFieldView,
+  playChainLightning,
+  playThunderStrikeImpact,
+  playThunderStrikeWarning,
+} from '../view/fx/playPlayerAreaSkillFx';
 import {
   playLightningSkillCast,
   playLightningSkillImpact,
@@ -204,6 +216,8 @@ export class GameScene extends Phaser.Scene {
   private progression = new PlayerProgression();
   private postMaxProgression = new PostMaxProgression();
   private playerSkills = new PlayerSkillSystem();
+  private playerAreaEffects = new PlayerAreaEffectSystem();
+  private playerFieldViews = new Map<string, Phaser.GameObjects.Graphics>();
   private playerPassives = new PlayerPassiveSystem();
   private rewardChoices = new RewardChoiceSystem();
   private world = new InfiniteWorldSystem();
@@ -242,6 +256,8 @@ export class GameScene extends Phaser.Scene {
     this.progression.reset();
     this.postMaxProgression.reset();
     this.playerSkills.reset(this.gameplayTime);
+    this.playerAreaEffects.reset();
+    this.playerFieldViews.clear();
     this.playerPassives.reset();
     this.rewardChoices.reset(Phaser.Math.RND.integerInRange(1, 0x7fffffff));
     this.world.reset();
@@ -336,6 +352,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   shutdown() {
+    this.clearPlayerAreaEffects();
     this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
     this.input.off(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
@@ -394,6 +411,7 @@ export class GameScene extends Phaser.Scene {
       this.handlePlayerSkillEvents(activation.events);
     });
     this.handlePlayerSkillEvents(this.playerSkills.update(this.gameplayTime));
+    this.handlePlayerAreaEffectEvents(this.playerAreaEffects.update(this.gameplayTime));
     this.updatePlayerSkillPresentation();
     updatePlayerShieldView(
       this.playerShieldView,
@@ -416,12 +434,17 @@ export class GameScene extends Phaser.Scene {
         monster.combat.homeY,
       );
       const enemyDefinition = getEnemyDefinition(monster.combat.kind);
+      const fieldSlowMultiplier = getFieldSlowMultiplierAt(
+        this.playerAreaEffects.getActiveFields(),
+        monster,
+      );
+      const monsterSpeed = monster.combat.speed * fieldSlowMultiplier;
       const aggro = updateMonsterAggro(monster.combat, playerDistance, homeDistance);
       if (aggro === 'chasing') {
         if (monster.combat.kind === 'normal' || playerDistance > enemyDefinition.preferredRange * 1.25) {
-          this.moveMonsterToward(monster, this.player.x, this.player.y, monster.combat.speed);
+          this.moveMonsterToward(monster, this.player.x, this.player.y, monsterSpeed);
         } else if (playerDistance < enemyDefinition.preferredRange * 0.75) {
-          this.moveMonsterToward(monster, this.player.x, this.player.y, -monster.combat.speed * 0.8);
+          this.moveMonsterToward(monster, this.player.x, this.player.y, -monsterSpeed * 0.8);
         } else {
           monsterBody.setVelocity(0, 0);
         }
@@ -434,11 +457,11 @@ export class GameScene extends Phaser.Scene {
           );
           monsterBody.setVelocity(0, 0);
         } else {
-          this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
+          this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monsterSpeed);
         }
       } else if (homeDistance > enemyDefinition.patrolRadius * 1.25) {
         setMonsterPatrolTarget(monster.combat, monster.combat.homeX, monster.combat.homeY, 0);
-        this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monster.combat.speed);
+        this.moveMonsterToward(monster, monster.combat.homeX, monster.combat.homeY, monsterSpeed);
       } else if (this.gameplayTime < monster.combat.patrolPauseUntil) {
         monsterBody.setVelocity(0, 0);
       } else {
@@ -472,7 +495,7 @@ export class GameScene extends Phaser.Scene {
             monster,
             monster.combat.patrolTargetX,
             monster.combat.patrolTargetY,
-            monster.combat.speed * 0.55,
+            monsterSpeed * 0.55,
           );
         }
       }
@@ -649,17 +672,17 @@ export class GameScene extends Phaser.Scene {
     if (!target) return;
 
     const effect = getPlayerSkillEffect(skillId, learned.level);
+    const skillDamage = Math.max(1, Math.round(
+      (this.playerAttack + this.playerPassives.getModifiers().attackBonus)
+        * definition.damageMultiplier
+        + definition.fixedDamage,
+    ));
     if (effect.type === 'projectile') {
-      const passiveAttack = this.playerPassives.getModifiers().attackBonus;
-      const damage = Math.round(
-        (this.playerAttack + passiveAttack) * definition.damageMultiplier
-          + definition.fixedDamage,
-      );
       const projectile = createProjectileState({
         id: `projectile-${this.bulletId++}`,
         ownerId: 'player',
         faction: 'player',
-        damage,
+        damage: skillDamage,
         velocityX: target.direction.x * effect.speed,
         velocityY: target.direction.y * effect.speed,
         remainingDistance: definition.range,
@@ -678,6 +701,67 @@ export class GameScene extends Phaser.Scene {
         this.player.x + target.direction.x * (24 + visualLength / 2),
         this.player.y + target.direction.y * (24 + visualLength / 2),
         visualStyle,
+      );
+      return;
+    }
+
+    if (effect.type === 'delayed-area') {
+      this.playerAreaEffects.scheduleStrikes({
+        x: target.point.x,
+        y: target.point.y,
+        radius: effect.radius,
+        damage: skillDamage,
+        firstStrikeAt: this.gameplayTime + effect.delayMs,
+        strikeCount: effect.strikeCount,
+        strikeIntervalMs: effect.strikeIntervalMs,
+      });
+      playThunderStrikeWarning(this, target.point.x, target.point.y, effect.radius, effect.delayMs);
+      return;
+    }
+
+    if (effect.type === 'chain') {
+      if (!target.targetId) return;
+      const candidates = this.monsters.children.entries.map(child => {
+        const monster = child as MonsterSprite;
+        return {
+          id: monster.monsterId,
+          x: monster.x,
+          y: monster.y,
+          active: monster.active && !monster.getData('defeated'),
+        };
+      });
+      const targetIds = resolveChainTargetIds(
+        target.targetId,
+        candidates,
+        effect.jumps,
+        effect.jumpRange,
+      );
+      const points = [{ x: this.player.x, y: this.player.y }];
+      targetIds.forEach((targetId, index) => {
+        const monster = this.findActiveMonster(targetId);
+        if (!monster) return;
+        points.push({ x: monster.x, y: monster.y });
+        const retainedDamage = skillDamage * effect.retainedDamage ** index;
+        this.damageMonster(monster, Math.max(0.5, Math.round(retainedDamage * 4) / 4));
+      });
+      playChainLightning(this, points);
+      return;
+    }
+
+    if (effect.type === 'field') {
+      const field = this.playerAreaEffects.createField({
+        x: this.player.x,
+        y: this.player.y,
+        radius: effect.radius,
+        damage: skillDamage,
+        slowMultiplier: effect.slowMultiplier,
+        startsAt: this.gameplayTime,
+        durationMs: effect.durationMs,
+        tickIntervalMs: effect.tickIntervalMs,
+      });
+      this.playerFieldViews.set(
+        field.id,
+        createStaticFieldView(this, field.x, field.y, field.radius),
       );
       return;
     }
@@ -722,6 +806,7 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (effect.type !== 'shield') return;
     this.vitals.restoreShield(effect.points);
     this.vitals.grantDamageProtection(
       effect.damageTakenMultiplier,
@@ -735,6 +820,37 @@ export class GameScene extends Phaser.Scene {
       this.vitals.state.maxShield,
     );
     this.playShieldPulse(effect.protectionMs > 0);
+  }
+
+  private handlePlayerAreaEffectEvents(events: PlayerAreaEffectEvent[]) {
+    events.forEach(event => {
+      if (event.type === 'field-expired') {
+        this.playerFieldViews.get(event.fieldId)?.destroy();
+        this.playerFieldViews.delete(event.fieldId);
+        return;
+      }
+      if (event.type === 'strike') {
+        playThunderStrikeImpact(this, event.x, event.y, event.radius);
+      }
+      this.monsters.children.each(child => {
+        const monster = child as MonsterSprite;
+        if (
+          monster.active
+          && !monster.getData('defeated')
+          && Phaser.Math.Distance.Between(event.x, event.y, monster.x, monster.y)
+            <= event.radius + monster.displayWidth * 0.2
+        ) {
+          this.damageMonster(monster, event.damage);
+        }
+        return null;
+      });
+    });
+  }
+
+  private clearPlayerAreaEffects() {
+    this.playerAreaEffects.reset();
+    this.playerFieldViews.forEach(view => view.destroy());
+    this.playerFieldViews.clear();
   }
 
   private updatePlayerSkillPresentation() {
@@ -2014,6 +2130,7 @@ export class GameScene extends Phaser.Scene {
     this.damageTween?.stop();
     this.player.setAlpha(1);
     this.player.clearTint();
+    this.clearPlayerAreaEffects();
     this.physics.pause();
     this.monsterTimer?.remove(false);
     this.foodTimer?.remove(false);
