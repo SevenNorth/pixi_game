@@ -2,6 +2,8 @@
 export const combatBalance = {
   player: {
     baseMoveSpeed: 180,
+    basicAttackIntervalMs: 500,
+    autoAttackRange: 520,
     startingAttack: 1,
     attackIncreaseEveryLevels: 2,
     attackIncreaseAmount: 1,
@@ -14,5 +16,10 @@ export const combatBalance = {
   monsterContact: {
     minimumSeparation: 48,
     separationScale: 0.35,
+  },
+  targets: {
+    normalBasicHits: [2, 4],
+    eliteDurationSeconds: [6, 10],
+    bossDurationSeconds: [45, 75],
   },
 } as const;

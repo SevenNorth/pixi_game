@@ -488,7 +488,7 @@ export class GameScene extends Phaser.Scene {
     if (
       this.ended ||
       this.paused ||
-      this.gameplayTime - this.lastShotAt < 500
+      this.gameplayTime - this.lastShotAt < combatBalance.player.basicAttackIntervalMs
     ) return;
     this.lastShotAt = this.gameplayTime;
     this.shoot(this.playerDirection.facingVector);
@@ -496,7 +496,10 @@ export class GameScene extends Phaser.Scene {
 
   private handleAutoAttack() {
     const target = this.resolveAutoAttackTarget();
-    if (!target || this.gameplayTime - this.lastShotAt < 500) return;
+    if (
+      !target
+      || this.gameplayTime - this.lastShotAt < combatBalance.player.basicAttackIntervalMs
+    ) return;
     this.lastShotAt = this.gameplayTime;
     this.shoot({
       x: target.x - this.player.x,
@@ -505,7 +508,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resolveAutoAttackTarget() {
-    const range = 520;
+    const range = combatBalance.player.autoAttackRange;
     const locked = this.lockedTargetId
       ? this.findActiveMonster(this.lockedTargetId)
       : undefined;
