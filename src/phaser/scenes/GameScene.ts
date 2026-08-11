@@ -34,6 +34,7 @@ import {
   setMonsterPatrolTarget,
   finishEnemySkill,
   getEnemyAttackCooldownMs,
+  getEnemySkillDamage,
   getEnemySkillKind,
   startEnemySkill,
   updateMonsterAggro,
@@ -1276,12 +1277,13 @@ export class GameScene extends Phaser.Scene {
     directionX: number,
     directionY: number,
   ) {
+    const skillDamage = getEnemySkillDamage(monster.combat, skill);
     if (skill === 'aimed-shot') {
       this.launchEnemyProjectile(
         monster,
         directionX,
         directionY,
-        monster.combat.skillDamage,
+        skillDamage,
       );
       return;
     }
@@ -1294,7 +1296,7 @@ export class GameScene extends Phaser.Scene {
           monster,
           Math.cos(angle),
           Math.sin(angle),
-          monster.combat.skillDamage,
+          skillDamage,
         );
       });
       return;
@@ -1308,7 +1310,7 @@ export class GameScene extends Phaser.Scene {
       : monster.combat.bossVariant === 'dragon-green' ? 0x70e56f : 0xff8654;
     playEnemySkillImpact(this, monster.x, monster.y, radius, impactColor);
     const distance = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
-    if (distance <= radius) this.applyPlayerDamage(monster.combat.skillDamage);
+    if (distance <= radius) this.applyPlayerDamage(skillDamage);
   }
 
   private applyPlayerDamage(damage: number) {

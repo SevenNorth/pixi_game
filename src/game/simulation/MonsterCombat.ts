@@ -13,6 +13,7 @@ import type {
   EnemyKind,
   EnemySkillKind,
 } from '../content/enemies/enemyDefinitions';
+import { getEnemySkillBalance } from '../content/enemies/enemySkillDefinitions';
 import { getMonsterLevelModifiers } from './MonsterLevelScaling';
 
 export type MonsterAggroState = 'idle' | 'chasing' | 'returning';
@@ -127,9 +128,10 @@ export function startEnemySkill(
   now: number,
 ) {
   const definition = getEnemyDefinition(state.kind);
+  const skillBalance = getEnemySkillBalance(kind);
   state.activeSkill = {
     kind,
-    endsAt: now + definition.warningMs,
+    endsAt: now + definition.warningMs * skillBalance.warningMultiplier,
     directionX,
     directionY,
   };
@@ -137,8 +139,16 @@ export function startEnemySkill(
 }
 
 export function finishEnemySkill(state: MonsterCombatState, now: number) {
+  const cooldownMultiplier = state.activeSkill
+    ? getEnemySkillBalance(state.activeSkill.kind).cooldownMultiplier
+    : 1;
   state.activeSkill = undefined;
-  state.nextSkillAt = now + getEnemySkillCooldownMs(state);
+  state.nextSkillAt = now + getEnemySkillCooldownMs(state) * cooldownMultiplier;
+}
+
+export function getEnemySkillDamage(state: MonsterCombatState, kind: EnemySkillKind) {
+  const damage = state.skillDamage * getEnemySkillBalance(kind).damageMultiplier;
+  return Math.round(damage * 4) / 4;
 }
 
 export function setMonsterPatrolTarget(
