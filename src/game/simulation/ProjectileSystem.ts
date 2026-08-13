@@ -16,6 +16,8 @@ export interface ProjectileState {
   remainingDistance: number;
   collisionEnabledAt: number;
   impact?: ProjectileSplashImpact;
+  pierceRemaining?: number;
+  hitTargetIds?: string[];
 }
 
 export type ProjectileConfig = ProjectileState;
@@ -25,6 +27,8 @@ export function createProjectileState(config: ProjectileConfig): ProjectileState
     ...config,
     damage: Math.max(0, config.damage),
     remainingDistance: Math.max(0, config.remainingDistance),
+    pierceRemaining: Math.max(0, Math.floor(config.pierceRemaining ?? 0)),
+    hitTargetIds: [...(config.hitTargetIds ?? [])],
   };
 }
 
@@ -43,4 +47,21 @@ export function canProjectileHit(state: ProjectileState, targetFaction: Faction)
 
 export function isProjectileCollisionEnabled(state: ProjectileState, now: number) {
   return now >= state.collisionEnabledAt;
+}
+
+export function hasProjectileHitTarget(state: ProjectileState, targetId: string) {
+  return state.hitTargetIds?.includes(targetId) ?? false;
+}
+
+export function recordProjectileTargetHit(state: ProjectileState, targetId: string) {
+  if (hasProjectileHitTarget(state, targetId)) return false;
+  (state.hitTargetIds ??= []).push(targetId);
+  return true;
+}
+
+export function consumeProjectilePierce(state: ProjectileState) {
+  const remaining = Math.max(0, state.pierceRemaining ?? 0);
+  if (remaining <= 0) return false;
+  state.pierceRemaining = remaining - 1;
+  return true;
 }

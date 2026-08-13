@@ -72,6 +72,10 @@ export class PlayerPassiveSystem {
       maxShieldBonus: 0,
       moveSpeedMultiplier: 1,
       cooldownMultiplier: 1,
+      projectilePierce: 0,
+      foodShieldConversion: 0,
+      postCastAttackSpeedMultiplier: 1,
+      emergencyShield: 0,
     };
     this.slots.forEach(slot => {
       if (!slot) return;
@@ -81,8 +85,25 @@ export class PlayerPassiveSystem {
       if (definition.modifier === 'maxShield') modifiers.maxShieldBonus += value;
       if (definition.modifier === 'moveSpeed') modifiers.moveSpeedMultiplier += value;
       if (definition.modifier === 'cooldown') modifiers.cooldownMultiplier -= value;
+      if (definition.modifier === 'projectilePierce') modifiers.projectilePierce += value;
+      if (definition.modifier === 'foodShieldConversion') {
+        modifiers.foodShieldConversion += value;
+      }
+      if (definition.modifier === 'postCastAttackSpeed') {
+        modifiers.postCastAttackSpeedMultiplier -= value;
+      }
+      if (definition.modifier === 'emergencyShield') modifiers.emergencyShield += value;
     });
     modifiers.cooldownMultiplier = Math.max(0.5, modifiers.cooldownMultiplier);
+    modifiers.foodShieldConversion = Math.min(1, modifiers.foodShieldConversion);
+    modifiers.postCastAttackSpeedMultiplier = Math.max(
+      0.55,
+      modifiers.postCastAttackSpeedMultiplier,
+    );
     return modifiers;
+  }
+
+  getLevel(passiveId: PassiveSkillId) {
+    return this.slots.find(slot => slot?.id === passiveId)?.level ?? 0;
   }
 }

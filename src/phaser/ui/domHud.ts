@@ -2,6 +2,10 @@ import { foodKeys } from '../assets/manifest';
 import { t } from '../../i18n';
 import type { MessageKey } from '../../i18n';
 import type { PassiveSkillId } from '../../game/content/skills/passiveSkillDefinitions';
+import {
+  EMERGENCY_CAPACITOR_COOLDOWN_MS,
+  RAPID_CASTING_DURATION_MS,
+} from '../../game/simulation/PlayerPassiveTriggerSystem';
 import type { PlayerSkillId } from '../../game/content/skills/playerSkillDefinitions';
 import type { PassiveSkillSlot } from '../../game/simulation/PlayerPassiveSystem';
 import type { PlayerSkillSlotState } from '../../game/simulation/PlayerSkillSystem';
@@ -506,7 +510,26 @@ function getRewardCandidateEffect(candidate: RewardCandidate) {
     if (definition.modifier === 'moveSpeed') {
       return t('rewardMoveSpeedEffect', { value: Math.round(value * 100) });
     }
-    return t('rewardCooldownEffect', { value: Math.round(value * 100) });
+    if (definition.modifier === 'cooldown') {
+      return t('rewardCooldownEffect', { value: Math.round(value * 100) });
+    }
+    const totalValue = value * candidate.nextLevel;
+    if (definition.modifier === 'projectilePierce') {
+      return t('rewardPiercingCurrentEffect', { value: totalValue });
+    }
+    if (definition.modifier === 'foodShieldConversion') {
+      return t('rewardOverflowChargeEffect', { value: Math.round(totalValue * 100) });
+    }
+    if (definition.modifier === 'postCastAttackSpeed') {
+      return t('rewardRapidCastingEffect', {
+        value: Math.round(totalValue * 100),
+        duration: (RAPID_CASTING_DURATION_MS / 1000).toFixed(1),
+      });
+    }
+    return t('rewardEmergencyCapacitorEffect', {
+      value: totalValue,
+      cooldown: EMERGENCY_CAPACITOR_COOLDOWN_MS / 1000,
+    });
   }
 
   return getActiveSkillEffectText(candidate.skillId, candidate.nextLevel);
@@ -687,6 +710,10 @@ const passiveSkillNameKeys: Record<PassiveSkillId, MessageKey> = {
   'shield-capacity': 'passiveShieldCapacity',
   'move-speed': 'passiveMoveSpeed',
   'cooldown-reduction': 'passiveCooldownReduction',
+  'piercing-current': 'passivePiercingCurrent',
+  'overflow-charge': 'passiveOverflowCharge',
+  'rapid-casting': 'passiveRapidCasting',
+  'emergency-capacitor': 'passiveEmergencyCapacitor',
 };
 
 export function updateSkillSlots(slots: Array<PlayerSkillSlotState | null>) {
@@ -753,6 +780,7 @@ function renderPips(container: HTMLElement, value: number, max: number, type: 'h
       pip.className = `vital-pip vital-pip-${type}`;
       const remaining = value - index;
       pip.dataset.fill = remaining >= 1 ? 'full' : remaining > 0 ? 'partial' : 'empty';
+      pip.style.setProperty('--pip-fill', `${Math.max(0, Math.min(1, remaining)) * 100}%`);
       return pip;
     }),
   );

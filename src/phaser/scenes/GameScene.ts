@@ -48,6 +48,7 @@ import {
 } from '../../game/simulation/PlayerMovement';
 import type { CardinalDirection, PlayerDirectionState } from '../../game/simulation/PlayerMovement';
 import { PlayerPassiveSystem } from '../../game/simulation/PlayerPassiveSystem';
+import { PlayerPassiveTriggerSystem } from '../../game/simulation/PlayerPassiveTriggerSystem';
 import { PlayerProgression } from '../../game/simulation/PlayerProgression';
 import { PostMaxProgression } from '../../game/simulation/PostMaxProgression';
 import { RewardChoiceSystem } from '../../game/simulation/RewardChoiceSystem';
@@ -77,8 +78,11 @@ import {
 } from '../../game/simulation/SkillTargeting';
 import {
   canProjectileHit,
+  consumeProjectilePierce,
   createProjectileState,
+  hasProjectileHitTarget,
   isProjectileCollisionEnabled,
+  recordProjectileTargetHit,
 } from '../../game/simulation/ProjectileSystem';
 import { t } from '../../i18n';
 import { assets, foodKeys } from '../assets/manifest';
@@ -109,6 +113,7 @@ import {
 } from '../ui/domHud';
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playFoodPickup } from '../view/fx/playFoodPickup';
+import { playPierceHitFx, playRapidCastingFx } from '../view/fx/playPassiveTriggerFx';
 import { playShieldPickup } from '../view/fx/playShieldPickup';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
 import {
@@ -219,6 +224,7 @@ export class GameScene extends Phaser.Scene {
   private playerAreaEffects = new PlayerAreaEffectSystem();
   private playerFieldViews = new Map<string, Phaser.GameObjects.Graphics>();
   private playerPassives = new PlayerPassiveSystem();
+  private playerPassiveTriggers = new PlayerPassiveTriggerSystem();
   private rewardChoices = new RewardChoiceSystem();
   private world = new InfiniteWorldSystem();
   private mapProgression = new MapProgression();
@@ -259,6 +265,7 @@ export class GameScene extends Phaser.Scene {
     this.playerAreaEffects.reset();
     this.playerFieldViews.clear();
     this.playerPassives.reset();
+    this.playerPassiveTriggers.reset();
     this.rewardChoices.reset(Phaser.Math.RND.integerInRange(1, 0x7fffffff));
     this.world.reset();
     if (!preserveMapProgression) this.mapProgression.reset();
@@ -539,10 +546,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private handleShoot() {
+    const attackInterval = this.getBasicAttackIntervalMs();
     if (
       this.ended ||
       this.paused ||
-      this.gameplayTime - this.lastShotAt < combatBalance.player.basicAttackIntervalMs
+      this.gameplayTime - this.lastShotAt < attackInterval
     ) return;
     this.lastShotAt = this.gameplayTime;
     this.shoot(this.playerDirection.facingVector);
@@ -550,15 +558,25 @@ export class GameScene extends Phaser.Scene {
 
   private handleAutoAttack() {
     const target = this.resolveAutoAttackTarget();
+    const attackInterval = this.getBasicAttackIntervalMs();
     if (
       !target
-      || this.gameplayTime - this.lastShotAt < combatBalance.player.basicAttackIntervalMs
+      || this.gameplayTime - this.lastShotAt < attackInterval
     ) return;
     this.lastShotAt = this.gameplayTime;
     this.shoot({
       x: target.x - this.player.x,
       y: target.y - this.player.y,
     });
+  }
+
+  private getBasicAttackIntervalMs() {
+    const modifiers = this.playerPassives.getModifiers();
+    return combatBalance.player.basicAttackIntervalMs
+      * this.playerPassiveTriggers.getAttackIntervalMultiplier(
+        this.gameplayTime,
+        modifiers.postCastAttackSpeedMultiplier,
+      );
   }
 
   private resolveAutoAttackTarget() {
@@ -672,6 +690,12 @@ export class GameScene extends Phaser.Scene {
     if (!target) return;
 
     const effect = getPlayerSkillEffect(skillId, learned.level);
+    if (this.playerPassiveTriggers.triggerRapidCasting(
+      this.gameplayTime,
+      this.playerPassives.getLevel('rapid-casting') > 0,
+    )) {
+      playRapidCastingFx(this, this.player.x, this.player.y);
+    }
     const skillDamage = Math.max(1, Math.round(
       (this.playerAttack + this.playerPassives.getModifiers().attackBonus)
         * definition.damageMultiplier
@@ -910,6 +934,7 @@ export class GameScene extends Phaser.Scene {
       velocityY: direction.y * BULLET_SPEED,
       remainingDistance: 500,
       collisionEnabledAt: this.gameplayTime + 50,
+      pierceRemaining: this.playerPassives.getModifiers().projectilePierce,
     });
     this.spawnProjectile(
       projectile,
@@ -1430,8 +1455,22 @@ export class GameScene extends Phaser.Scene {
   }
 
   private applyPlayerDamage(damage: number) {
+    const previousHpRatio = this.vitals.state.hp / this.vitals.state.maxHp;
     const result = this.vitals.takeDamage(damage, this.gameplayTime);
     if (!result.applied) return result;
+    const currentHpRatio = this.vitals.state.hp / this.vitals.state.maxHp;
+    const emergencyShield = this.playerPassiveTriggers.resolveEmergencyCapacitor(
+      previousHpRatio,
+      currentHpRatio,
+      this.playerPassives.getModifiers().emergencyShield,
+      this.gameplayTime,
+    );
+    const restoredEmergencyShield = this.vitals.state.hp > 0
+      ? this.vitals.restoreShield(emergencyShield)
+      : 0;
+    if (restoredEmergencyShield > 0) {
+      playShieldPickup(this, this.player.x, this.player.y, restoredEmergencyShield);
+    }
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,
@@ -1465,11 +1504,15 @@ export class GameScene extends Phaser.Scene {
     if (
       monster.getData('defeated') ||
       !canProjectileHit(projectile, 'enemy') ||
-      !isProjectileCollisionEnabled(projectile, this.gameplayTime)
+      !isProjectileCollisionEnabled(projectile, this.gameplayTime) ||
+      hasProjectileHitTarget(projectile, monster.monsterId)
     ) return;
     const impactX = monster.x;
     const impactY = monster.y;
-    projectileView.destroy();
+    recordProjectileTargetHit(projectile, monster.monsterId);
+    const pierced = consumeProjectilePierce(projectile);
+    if (!pierced) projectileView.destroy();
+    else playPierceHitFx(this, impactX, impactY);
     this.damageMonster(monster, projectile.damage);
 
     if (projectile.impact?.type === 'splash') {
@@ -2040,13 +2083,24 @@ export class GameScene extends Phaser.Scene {
 
   private onFoodEat: Phaser.Types.Physics.Arcade.ArcadePhysicsCallback = (playerObject, foodObject) => {
     const food = foodObject as unknown as FoodSprite;
-    if (this.vitals.state.hp >= this.vitals.state.maxHp) return;
     const recovery = getFoodRecovery(food.foodKey);
+    const conversion = this.playerPassives.getModifiers().foodShieldConversion;
+    const canRestoreHp = this.vitals.state.hp < this.vitals.state.maxHp;
+    const convertedShield = !canRestoreHp && conversion > 0
+      ? Math.round(recovery * conversion * 4) / 4
+      : 0;
+    if (!canRestoreHp && (
+      convertedShield <= 0 || this.vitals.state.shield >= this.vitals.state.maxShield
+    )) return;
     const pickupX = food.x;
     const pickupY = food.y;
     food.destroy();
-    const restoredHp = this.vitals.restoreHp(recovery);
+    const restoredHp = canRestoreHp ? this.vitals.restoreHp(recovery) : 0;
+    const restoredShield = convertedShield > 0
+      ? this.vitals.restoreShield(convertedShield)
+      : 0;
     if (restoredHp > 0) playFoodPickup(this, pickupX, pickupY, restoredHp);
+    if (restoredShield > 0) playShieldPickup(this, pickupX, pickupY, restoredShield);
     updateVitals(
       this.vitals.state.hp,
       this.vitals.state.maxHp,

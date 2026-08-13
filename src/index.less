@@ -106,13 +106,13 @@ body {
 
 .vital-pip-hp[data-fill="partial"]::before {
   color: transparent;
-  background: linear-gradient(90deg, var(--hp) 50%, var(--empty-pip) 50%);
+  background: linear-gradient(90deg, var(--hp) var(--pip-fill), var(--empty-pip) var(--pip-fill));
   background-clip: text;
   -webkit-background-clip: text;
 }
 
 .vital-pip-shield[data-fill="partial"]::before {
-  background: linear-gradient(90deg, var(--shield) 50%, var(--empty-pip) 50%);
+  background: linear-gradient(90deg, var(--shield) var(--pip-fill), var(--empty-pip) var(--pip-fill));
   background-clip: content-box;
 }
 
@@ -319,6 +319,10 @@ body {
 .passive-skill-slot[data-passive="shield-capacity"] .passive-skill-icon::before { content: "SHD"; }
 .passive-skill-slot[data-passive="move-speed"] .passive-skill-icon::before { content: ">>"; }
 .passive-skill-slot[data-passive="cooldown-reduction"] .passive-skill-icon::before { content: "CD"; }
+.passive-skill-slot[data-passive="piercing-current"] .passive-skill-icon::before { content: ">>"; }
+.passive-skill-slot[data-passive="overflow-charge"] .passive-skill-icon::before { content: "+S"; }
+.passive-skill-slot[data-passive="rapid-casting"] .passive-skill-icon::before { content: "AS"; }
+.passive-skill-slot[data-passive="emergency-capacitor"] .passive-skill-icon::before { content: "SOS"; }
 
 .passive-skill-level {
   position: absolute;
