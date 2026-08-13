@@ -3,6 +3,8 @@ import {
   playerSkillDefinitions,
 } from '../content/skills/playerSkillDefinitions';
 import type { PlayerSkillId } from '../content/skills/playerSkillDefinitions';
+import type { PlayerSkillEvolutionId } from '../content/skills/playerSkillEvolutionDefinitions';
+import { playerSkillEvolutionDefinitions } from '../content/skills/playerSkillEvolutionDefinitions';
 import type { SkillAction } from '../input/GameActions';
 import {
   advanceSkillRuntime,
@@ -25,6 +27,7 @@ export interface LearnedPlayerSkill {
 export interface PlayerSkillState {
   learned: LearnedPlayerSkill[];
   equipped: [PlayerSkillId | null, PlayerSkillId | null, PlayerSkillId | null];
+  evolutions: PlayerSkillEvolutionId[];
 }
 
 export interface PlayerSkillRuntimeEvent {
@@ -39,6 +42,7 @@ export interface PlayerSkillSlotState {
   phase: SkillRuntimeState['phase'];
   remainingMs: number;
   cooldownMs: number;
+  evolutionId: PlayerSkillEvolutionId | null;
 }
 
 export type LearnSkillResult =
@@ -51,6 +55,7 @@ export class PlayerSkillSystem {
   readonly state: PlayerSkillState = {
     learned: [],
     equipped: [null, null, null],
+    evolutions: [],
   };
 
   private readonly runtimes = new Map<PlayerSkillId, SkillRuntimeState>();
@@ -59,6 +64,7 @@ export class PlayerSkillSystem {
   reset(now = 0) {
     this.state.learned = [{ id: 'lightning-bolt', level: 1 }];
     this.state.equipped = ['lightning-bolt', null, null];
+    this.state.evolutions = [];
     this.runtimes.clear();
     this.runtimes.set(
       'lightning-bolt',
@@ -92,6 +98,9 @@ export class PlayerSkillSystem {
       if (replacementIndex < 0) return { status: 'invalid-replacement', skillId };
       this.state.learned.splice(replacementIndex, 1);
       this.runtimes.delete(replacementId);
+      this.state.evolutions = this.state.evolutions.filter(
+        evolutionId => playerSkillEvolutionDefinitions[evolutionId].skillId !== replacementId,
+      );
       this.state.equipped = this.state.equipped.map(id => (
         id === replacementId ? null : id
       )) as PlayerSkillState['equipped'];
@@ -134,6 +143,21 @@ export class PlayerSkillSystem {
       now,
     );
     return true;
+  }
+
+  evolveSkill(evolutionId: PlayerSkillEvolutionId) {
+    const evolution = playerSkillEvolutionDefinitions[evolutionId];
+    const learned = evolution ? this.getLearnedSkill(evolution.skillId) : undefined;
+    if (!learned || learned.level < playerSkillDefinitions[evolution.skillId].maxLevel) return false;
+    if (this.state.evolutions.includes(evolutionId)) return false;
+    this.state.evolutions.push(evolutionId);
+    return true;
+  }
+
+  isSkillEvolved(skillId: PlayerSkillId) {
+    return this.state.evolutions.some(
+      evolutionId => playerSkillEvolutionDefinitions[evolutionId].skillId === skillId,
+    );
   }
 
   requestAction(action: SkillAction, now: number) {
@@ -183,6 +207,9 @@ export class PlayerSkillSystem {
         phase: runtime.phase,
         remainingMs: getSkillTimeUntilReady(definition, runtime, now),
         cooldownMs: definition.cooldownMs,
+        evolutionId: this.state.evolutions.find(
+          evolutionId => playerSkillEvolutionDefinitions[evolutionId].skillId === skillId,
+        ) ?? null,
       };
     });
   }

@@ -716,15 +716,19 @@ export class GameScene extends Phaser.Scene {
         + definition.fixedDamage,
     ));
     if (effect.type === 'projectile') {
+      const evolved = this.playerSkills.isSkillEvolved('lightning-bolt');
       const projectile = createProjectileState({
         id: `projectile-${this.bulletId++}`,
         ownerId: 'player',
         faction: 'player',
-        damage: skillDamage,
+        damage: evolved ? Math.max(1, Math.round(skillDamage * 1.35)) : skillDamage,
         velocityX: target.direction.x * effect.speed,
         velocityY: target.direction.y * effect.speed,
         remainingDistance: definition.range,
         collisionEnabledAt: this.gameplayTime + 30,
+        pierceRemaining: evolved
+          ? this.playerPassives.getModifiers().projectilePierce + 5
+          : 0,
         impact: {
           type: 'splash',
           radius: effect.splashRadius,
@@ -805,11 +809,24 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (effect.type === 'orbit') {
+      const evolved = this.playerSkills.isSkillEvolved('magnetic-orbit');
       const orbit = this.playerConstructs.createOrbit({
-        count: effect.count, radius: effect.radius, damage: skillDamage,
+        count: effect.count + (evolved ? 2 : 0),
+        radius: effect.radius,
+        damage: evolved ? Math.max(1, Math.round(skillDamage * 1.2)) : skillDamage,
         now: this.gameplayTime, durationMs: effect.durationMs,
         hitCooldownMs: effect.hitCooldownMs,
       });
+      if (evolved) {
+        this.vitals.restoreShield(0.5);
+        updateVitals(
+          this.vitals.state.hp,
+          this.vitals.state.maxHp,
+          this.vitals.state.shield,
+          this.vitals.state.maxShield,
+        );
+        this.playShieldPulse(false);
+      }
       for (let index = 0; index < orbit.count; index += 1) {
         this.constructViews.set(
           `${orbit.id}:${index}`,
@@ -820,15 +837,27 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (effect.type === 'moving-orb') {
-      const orb = this.playerConstructs.createMovingOrb({
-        x: this.player.x, y: this.player.y,
-        velocityX: target.direction.x * effect.speed,
-        velocityY: target.direction.y * effect.speed,
-        radius: effect.radius, damage: skillDamage,
-        now: this.gameplayTime, durationMs: effect.durationMs,
-        tickIntervalMs: effect.tickIntervalMs,
+      const evolved = this.playerSkills.isSkillEvolved('ball-lightning');
+      const angles = evolved ? [-0.24, 0, 0.24] : [0];
+      angles.forEach(angle => {
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        const directionX = target.direction.x * cos - target.direction.y * sin;
+        const directionY = target.direction.x * sin + target.direction.y * cos;
+        const orb = this.playerConstructs.createMovingOrb({
+          x: this.player.x, y: this.player.y,
+          velocityX: directionX * effect.speed,
+          velocityY: directionY * effect.speed,
+          radius: evolved ? effect.radius * 0.82 : effect.radius,
+          damage: evolved ? Math.max(0.5, Math.round(skillDamage * 0.7 * 2) / 2) : skillDamage,
+          now: this.gameplayTime, durationMs: effect.durationMs,
+          tickIntervalMs: effect.tickIntervalMs,
+        });
+        this.constructViews.set(
+          orb.id,
+          createConstructView(this, 'orb', orb.x, orb.y, orb.radius),
+        );
       });
-      this.constructViews.set(orb.id, createConstructView(this, 'orb', orb.x, orb.y, orb.radius));
       return;
     }
 
@@ -1875,12 +1904,7 @@ export class GameScene extends Phaser.Scene {
 
   private presentNextRewardChoice() {
     if (this.bossDefeatCinematicActive) return;
-    const choice = this.rewardChoices.activateNext({
-      activeSkills: this.playerSkills.state.learned,
-      passiveSkills: this.playerPassives.slots,
-      playerLevel: this.progression.state.level,
-      mapLevel: this.mapProgression.state.level,
-    });
+    const choice = this.rewardChoices.activateNext(this.getRewardChoiceContext());
     if (!choice) {
       hideRewardChoice();
       if (this.rewardPauseActive) {
@@ -1927,6 +1951,7 @@ export class GameScene extends Phaser.Scene {
       passiveSkills: this.playerPassives.slots,
       playerLevel: this.progression.state.level,
       mapLevel: this.mapProgression.state.level,
+      evolutions: this.playerSkills.state.evolutions,
     };
   }
 
@@ -2058,6 +2083,7 @@ export class GameScene extends Phaser.Scene {
       this.playerSkills.state.learned,
       this.playerSkills.state.equipped,
       this.selectedLoadoutSkillId,
+      this.playerSkills.state.evolutions,
     );
   }
 
@@ -2117,6 +2143,8 @@ export class GameScene extends Phaser.Scene {
 
     if (candidate.kind === 'passive-slot') {
       if (this.playerPassives.expandSlots() <= 0) return;
+    } else if (candidate.kind === 'skill-evolution') {
+      if (!this.playerSkills.evolveSkill(candidate.evolutionId)) return;
     } else if (candidate.kind === 'active-skill') {
       const result = this.playerSkills.learnSkill(candidate.skillId, this.gameplayTime);
       if (result.status === 'requires-forget') {

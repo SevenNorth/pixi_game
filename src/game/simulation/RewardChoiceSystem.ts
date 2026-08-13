@@ -6,6 +6,12 @@ import {
   passiveSkillDefinitions,
 } from '../content/skills/passiveSkillDefinitions';
 import type { PassiveSkillId } from '../content/skills/passiveSkillDefinitions';
+import {
+  playerSkillEvolutionDefinitions,
+} from '../content/skills/playerSkillEvolutionDefinitions';
+import type {
+  PlayerSkillEvolutionId,
+} from '../content/skills/playerSkillEvolutionDefinitions';
 import type { LearnedPlayerSkill } from './PlayerSkillSystem';
 import { MAX_PASSIVE_SLOT_COUNT } from './PlayerPassiveSystem';
 import type { PassiveSkillSlot } from './PlayerPassiveSystem';
@@ -13,7 +19,7 @@ import type { PassiveSkillSlot } from './PlayerPassiveSystem';
 export const REWARD_CANDIDATE_COUNT = 3;
 
 export type RewardSource = 'level-up' | 'elite-core' | 'boss' | 'post-max';
-export type RewardOperation = 'learn' | 'upgrade';
+export type RewardOperation = 'learn' | 'upgrade' | 'evolve';
 
 interface RewardCandidateBase {
   id: string;
@@ -37,10 +43,18 @@ export interface PassiveSlotRewardCandidate extends RewardCandidateBase {
   kind: 'passive-slot';
 }
 
+export interface SkillEvolutionRewardCandidate extends RewardCandidateBase {
+  kind: 'skill-evolution';
+  evolutionId: PlayerSkillEvolutionId;
+  skillId: PlayerSkillId;
+  requiredPassiveId: PassiveSkillId;
+}
+
 export type RewardCandidate =
   | ActiveSkillRewardCandidate
   | PassiveSkillRewardCandidate
-  | PassiveSlotRewardCandidate;
+  | PassiveSlotRewardCandidate
+  | SkillEvolutionRewardCandidate;
 
 export interface RewardChoice {
   id: number;
@@ -70,6 +84,7 @@ export interface RewardChoiceContext {
   passiveSkills: readonly (PassiveSkillSlot | null)[];
   playerLevel: number;
   mapLevel: number;
+  evolutions: readonly PlayerSkillEvolutionId[];
 }
 
 export interface RewardChoiceState {
@@ -202,6 +217,12 @@ export class RewardChoiceSystem {
       .filter(candidate => !excludedIds.has(candidate.id));
     const selected: RewardCandidate[] = [];
 
+    this.takeRandom(
+      pool.filter(candidate => candidate.kind === 'skill-evolution'),
+      pool,
+      selected,
+    );
+
     if (source === 'level-up' || source === 'boss') {
       this.takeRandom(
         pool.filter(candidate => (
@@ -243,6 +264,36 @@ export class RewardChoiceSystem {
     const candidates: RewardCandidate[] = [];
     const allowActive = source !== 'post-max';
     const allowPassive = source !== 'elite-core';
+
+    if (source !== 'elite-core') {
+      (Object.keys(playerSkillEvolutionDefinitions) as PlayerSkillEvolutionId[])
+        .forEach(evolutionId => {
+          const evolution = playerSkillEvolutionDefinitions[evolutionId];
+          const learnedSkill = context.activeSkills.find(
+            skill => skill.id === evolution.skillId,
+          );
+          const passiveLevel = context.passiveSkills.find(
+            passive => passive?.id === evolution.requiredPassiveId,
+          )?.level ?? 0;
+          if (
+            !learnedSkill
+            || learnedSkill.level < playerSkillDefinitions[evolution.skillId].maxLevel
+            || passiveLevel < evolution.requiredPassiveLevel
+            || context.evolutions.includes(evolutionId)
+          ) return;
+          candidates.push({
+            id: `skill-evolution:${evolutionId}`,
+            kind: 'skill-evolution',
+            evolutionId,
+            skillId: evolution.skillId,
+            requiredPassiveId: evolution.requiredPassiveId,
+            operation: 'evolve',
+            currentLevel: learnedSkill.level,
+            nextLevel: learnedSkill.level,
+            maxLevel: learnedSkill.level,
+          });
+        });
+    }
 
     if (allowActive) {
       (Object.keys(playerSkillDefinitions) as PlayerSkillId[]).forEach(skillId => {
@@ -339,6 +390,7 @@ export class RewardChoiceSystem {
 }
 
 function getCandidateWeight(candidate: RewardCandidate, source: RewardSource) {
+  if (candidate.kind === 'skill-evolution') return source === 'boss' ? 6 : 4;
   if (candidate.kind === 'passive-slot') return source === 'boss' ? 2.4 : 1.6;
   if (source === 'elite-core') return candidate.operation === 'upgrade' ? 4 : 1.5;
   if (source === 'post-max') return candidate.operation === 'upgrade' ? 2 : 1;

@@ -207,6 +207,11 @@ body {
   box-shadow: 0 0 8px rgba(248, 235, 117, 0.65);
 }
 
+.active-skill-slot[data-evolved="true"] {
+  border-color: #ffd24a;
+  box-shadow: 0 0 10px rgba(255, 210, 74, 0.48);
+}
+
 .skill-cooldown-mask {
   position: absolute;
   z-index: 1;
@@ -520,6 +525,16 @@ body {
   color: #f4ffff;
   text-align: left;
   cursor: pointer;
+}
+
+.reward-option[data-kind="skill-evolution"] {
+  border-color: rgba(255, 210, 74, 0.78);
+  background: rgba(24, 36, 40, 0.98);
+}
+
+.reward-option[data-kind="skill-evolution"] .reward-option-type,
+.reward-option[data-kind="skill-evolution"] .reward-option-level {
+  color: #fff3b0;
 }
 
 .reward-option:hover,

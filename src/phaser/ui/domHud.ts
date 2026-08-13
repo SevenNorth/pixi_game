@@ -23,6 +23,7 @@ import {
 } from '../../game/content/skills/playerSkillDefinitions';
 import { passiveSkillDefinitions } from '../../game/content/skills/passiveSkillDefinitions';
 import type { LearnedPlayerSkill } from '../../game/simulation/PlayerSkillSystem';
+import type { PlayerSkillEvolutionId } from '../../game/content/skills/playerSkillEvolutionDefinitions';
 
 let root: HTMLElement;
 let hud: HTMLElement;
@@ -285,10 +286,12 @@ export function showSkillLoadout(
   learned: readonly LearnedPlayerSkill[],
   equipped: readonly (PlayerSkillId | null)[],
   selectedSkillId: PlayerSkillId | null,
+  evolutions: readonly PlayerSkillEvolutionId[],
 ) {
   const slotKeys = ['Q', 'E', 'R'];
   skillLoadoutSlots.replaceChildren(...equipped.map((skillId, index) => {
     const learnedSkill = skillId ? learned.find(skill => skill.id === skillId) : undefined;
+    const evolutionId = skillId ? getEvolutionIdForSkill(evolutions, skillId) : undefined;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'skill-loadout-slot';
@@ -297,15 +300,20 @@ export function showSkillLoadout(
     button.innerHTML = `
       <span class="skill-loadout-slot-key">${slotKeys[index]}</span>
       <span class="skill-loadout-slot-name">${
-        learnedSkill ? t(playerSkillNameKeys[learnedSkill.id]) : t('emptySkill')
+        learnedSkill
+          ? evolutionId ? t(evolutionNameKeys[evolutionId]) : t(playerSkillNameKeys[learnedSkill.id])
+          : t('emptySkill')
       }</span>
-      <span class="skill-loadout-slot-level">${learnedSkill ? `Lv.${learnedSkill.level}` : ''}</span>
+      <span class="skill-loadout-slot-level">${learnedSkill
+    ? evolutionId ? 'MAX+' : `Lv.${learnedSkill.level}`
+    : ''}</span>
     `;
     button.addEventListener('click', () => dispatchSkillLoadoutAction('equip', index));
     return button;
   }));
 
   skillLoadoutSkills.replaceChildren(...learned.map((skill, index) => {
+    const evolutionId = getEvolutionIdForSkill(evolutions, skill.id);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'skill-loadout-skill';
@@ -313,9 +321,13 @@ export function showSkillLoadout(
     button.dataset.equipped = String(equipped.includes(skill.id));
     button.innerHTML = `
       <span class="skill-loadout-skill-key">${index + 1}</span>
-      <span class="skill-loadout-skill-name">${t(playerSkillNameKeys[skill.id])}</span>
-      <span class="skill-loadout-skill-level">Lv.${skill.level}</span>
-      <span class="skill-loadout-skill-effect">${getActiveSkillEffectText(skill.id, skill.level)}</span>
+      <span class="skill-loadout-skill-name">${evolutionId
+    ? t(evolutionNameKeys[evolutionId])
+    : t(playerSkillNameKeys[skill.id])}</span>
+      <span class="skill-loadout-skill-level">${evolutionId ? 'MAX+' : `Lv.${skill.level}`}</span>
+      <span class="skill-loadout-skill-effect">${evolutionId
+    ? t(evolutionEffectKeys[evolutionId])
+    : getActiveSkillEffectText(skill.id, skill.level)}</span>
       <span class="skill-loadout-skill-state">${
         equipped.includes(skill.id) ? t('skillLoadoutEquipped') : t('skillLoadoutStored')
       }</span>
@@ -502,10 +514,14 @@ function createRewardOption(candidate: RewardCandidate, index: number, canExclud
   button.innerHTML = `
     <span class="reward-option-key">${key}</span>
     <span class="reward-option-type">${t(
-      candidate.operation === 'learn' ? 'rewardLearn' : 'rewardUpgrade',
+      candidate.operation === 'learn'
+        ? 'rewardLearn'
+        : candidate.operation === 'evolve' ? 'rewardEvolve' : 'rewardUpgrade',
     )}</span>
     <span class="reward-option-name">${getRewardCandidateName(candidate)}</span>
-    <span class="reward-option-level">${t('rewardLevelChange', {
+    <span class="reward-option-level">${candidate.kind === 'skill-evolution'
+    ? t('rewardEvolutionReady')
+    : t('rewardLevelChange', {
       current: candidate.currentLevel,
       next: candidate.nextLevel,
     })}</span>
@@ -533,6 +549,7 @@ function createRewardOption(candidate: RewardCandidate, index: number, canExclud
 
 function getRewardCandidateName(candidate: RewardCandidate) {
   if (candidate.kind === 'passive-slot') return t('passiveSlotExpansion');
+  if (candidate.kind === 'skill-evolution') return t(evolutionNameKeys[candidate.evolutionId]);
   return candidate.kind === 'active-skill'
     ? t(playerSkillNameKeys[candidate.skillId])
     : t(passiveSkillNameKeys[candidate.skillId]);
@@ -540,6 +557,7 @@ function getRewardCandidateName(candidate: RewardCandidate) {
 
 function getRewardCandidateEffect(candidate: RewardCandidate) {
   if (candidate.kind === 'passive-slot') return t('passiveSlotExpansionEffect');
+  if (candidate.kind === 'skill-evolution') return t(evolutionEffectKeys[candidate.evolutionId]);
   if (candidate.kind === 'passive-skill') {
     const definition = passiveSkillDefinitions[candidate.skillId];
     const value = definition.valuePerLevel;
@@ -788,6 +806,29 @@ const playerSkillNameKeys: Record<PlayerSkillId, MessageKey> = {
   'tesla-turret': 'teslaTurret',
 };
 
+const evolutionNameKeys: Record<PlayerSkillEvolutionId, MessageKey> = {
+  'star-piercing-lance': 'starPiercingLance',
+  'thunder-barrier': 'thunderBarrier',
+  'chain-storm-cloud': 'chainStormCloud',
+};
+
+const evolutionEffectKeys: Record<PlayerSkillEvolutionId, MessageKey> = {
+  'star-piercing-lance': 'starPiercingLanceEffect',
+  'thunder-barrier': 'thunderBarrierEffect',
+  'chain-storm-cloud': 'chainStormCloudEffect',
+};
+
+function getEvolutionIdForSkill(
+  evolutions: readonly PlayerSkillEvolutionId[],
+  skillId: PlayerSkillId,
+) {
+  return evolutions.find(id => (
+    id === 'star-piercing-lance' && skillId === 'lightning-bolt'
+    || id === 'thunder-barrier' && skillId === 'magnetic-orbit'
+    || id === 'chain-storm-cloud' && skillId === 'ball-lightning'
+  ));
+}
+
 const passiveSkillNameKeys: Record<PassiveSkillId, MessageKey> = {
   'attack-boost': 'passiveAttackBoost',
   'shield-capacity': 'passiveShieldCapacity',
@@ -807,8 +848,9 @@ export function updateSkillSlots(slots: Array<PlayerSkillSlotState | null>) {
     const mask = element.querySelector('.skill-cooldown-mask') as HTMLElement;
     element.dataset.empty = String(!slot);
     element.dataset.skill = slot?.id ?? '';
+    element.dataset.evolved = String(Boolean(slot?.evolutionId));
     element.dataset.phase = slot?.phase ?? 'ready';
-    level.textContent = slot ? `Lv.${slot.level}` : '';
+    level.textContent = slot ? (slot.evolutionId ? 'MAX+' : `Lv.${slot.level}`) : '';
     const ratio = slot?.phase === 'cooldown' && slot.cooldownMs > 0
       ? Math.min(1, slot.remainingMs / slot.cooldownMs)
       : 0;
@@ -816,10 +858,16 @@ export function updateSkillSlots(slots: Array<PlayerSkillSlotState | null>) {
     cooldown.textContent = slot?.phase === 'cooldown' && slot.remainingMs > 0
       ? (slot.remainingMs / 1000).toFixed(1)
       : '';
-    element.title = slot ? t(playerSkillNameKeys[slot.id]) : t('emptySkill');
+    element.title = slot
+      ? slot.evolutionId ? t(evolutionNameKeys[slot.evolutionId]) : t(playerSkillNameKeys[slot.id])
+      : t('emptySkill');
     element.setAttribute(
       'aria-label',
-      slot ? `${t(playerSkillNameKeys[slot.id])} Lv.${slot.level}` : t('emptySkill'),
+      slot
+        ? `${slot.evolutionId
+          ? t(evolutionNameKeys[slot.evolutionId])
+          : t(playerSkillNameKeys[slot.id])} ${slot.evolutionId ? 'MAX+' : `Lv.${slot.level}`}`
+        : t('emptySkill'),
     );
   });
 }
