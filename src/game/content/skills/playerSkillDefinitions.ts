@@ -6,8 +6,23 @@ export type PlayerSkillId =
   | 'storm-shield'
   | 'thunder-strike'
   | 'chain-lightning'
-  | 'static-field';
-export type PlayerSkillIcon = 'lightning' | 'dash' | 'shield' | 'strike' | 'chain' | 'field';
+  | 'static-field'
+  | 'magnetic-orbit'
+  | 'ball-lightning'
+  | 'gravity-storm'
+  | 'tesla-turret';
+export type PlayerSkillIcon =
+  | 'lightning'
+  | 'dash'
+  | 'shield'
+  | 'strike'
+  | 'chain'
+  | 'field'
+  | 'orbit'
+  | 'orb'
+  | 'vortex'
+  | 'turret';
+export type PlayerSkillTag = 'projectile' | 'area' | 'defense' | 'mobility' | 'control' | 'summon';
 
 export type PlayerSkillEffect =
   | {
@@ -54,6 +69,39 @@ export type PlayerSkillEffect =
       durationPerLevelMs: number;
       tickIntervalMs: number;
       slowMultiplierByLevel: readonly [number, number, number];
+    }
+  | {
+      type: 'orbit';
+      countByLevel: readonly [number, number, number];
+      radius: number;
+      radiusPerLevel: number;
+      durationMs: number;
+      hitCooldownMs: number;
+    }
+  | {
+      type: 'moving-orb';
+      speed: number;
+      radius: number;
+      radiusPerLevel: number;
+      durationMs: number;
+      durationPerLevelMs: number;
+      tickIntervalMs: number;
+    }
+  | {
+      type: 'vortex';
+      radius: number;
+      radiusPerLevel: number;
+      durationMs: number;
+      durationPerLevelMs: number;
+      tickIntervalMs: number;
+      pullSpeedByLevel: readonly [number, number, number];
+    }
+  | {
+      type: 'turret';
+      countByLevel: readonly [number, number, number];
+      durationMs: number;
+      attackIntervalMs: number;
+      range: number;
     };
 
 export type ResolvedPlayerSkillEffect =
@@ -94,6 +142,34 @@ export type ResolvedPlayerSkillEffect =
       durationMs: number;
       tickIntervalMs: number;
       slowMultiplier: number;
+    }
+  | {
+      type: 'orbit';
+      count: number;
+      radius: number;
+      durationMs: number;
+      hitCooldownMs: number;
+    }
+  | {
+      type: 'moving-orb';
+      speed: number;
+      radius: number;
+      durationMs: number;
+      tickIntervalMs: number;
+    }
+  | {
+      type: 'vortex';
+      radius: number;
+      durationMs: number;
+      tickIntervalMs: number;
+      pullSpeed: number;
+    }
+  | {
+      type: 'turret';
+      count: number;
+      durationMs: number;
+      attackIntervalMs: number;
+      range: number;
     };
 
 export interface PlayerSkillDefinition {
@@ -104,6 +180,9 @@ export interface PlayerSkillDefinition {
   damageMultiplierPerLevel: number;
   rangePerLevel: number;
   cooldownReductionPerLevel: number;
+  tags: readonly PlayerSkillTag[];
+  unlockPlayerLevel: number;
+  unlockMapLevel: number;
   effect: PlayerSkillEffect;
 }
 
@@ -126,6 +205,9 @@ export const playerSkillDefinitions: Record<PlayerSkillId, PlayerSkillDefinition
     damageMultiplierPerLevel: 0.4,
     rangePerLevel: 50,
     cooldownReductionPerLevel: 180,
+    tags: ['projectile', 'area'],
+    unlockPlayerLevel: 1,
+    unlockMapLevel: 1,
     effect: {
       type: 'projectile',
       speed: 560,
@@ -153,6 +235,9 @@ export const playerSkillDefinitions: Record<PlayerSkillId, PlayerSkillDefinition
     damageMultiplierPerLevel: 0,
     rangePerLevel: 30,
     cooldownReductionPerLevel: 250,
+    tags: ['mobility', 'defense'],
+    unlockPlayerLevel: 1,
+    unlockMapLevel: 1,
     effect: {
       type: 'dash',
       invulnerabilityMsByLevel: [0, 360, 560],
@@ -178,6 +263,9 @@ export const playerSkillDefinitions: Record<PlayerSkillId, PlayerSkillDefinition
     damageMultiplierPerLevel: 0,
     rangePerLevel: 0,
     cooldownReductionPerLevel: 450,
+    tags: ['defense'],
+    unlockPlayerLevel: 1,
+    unlockMapLevel: 1,
     effect: {
       type: 'shield',
       basePoints: 1,
@@ -204,6 +292,9 @@ export const playerSkillDefinitions: Record<PlayerSkillId, PlayerSkillDefinition
     damageMultiplierPerLevel: 0.45,
     rangePerLevel: 45,
     cooldownReductionPerLevel: 300,
+    tags: ['area'],
+    unlockPlayerLevel: 2,
+    unlockMapLevel: 1,
     effect: {
       type: 'delayed-area',
       delayMs: 520,
@@ -231,6 +322,9 @@ export const playerSkillDefinitions: Record<PlayerSkillId, PlayerSkillDefinition
     damageMultiplierPerLevel: 0.3,
     rangePerLevel: 40,
     cooldownReductionPerLevel: 240,
+    tags: ['projectile', 'area'],
+    unlockPlayerLevel: 2,
+    unlockMapLevel: 1,
     effect: {
       type: 'chain',
       jumpsByLevel: [3, 4, 5],
@@ -257,6 +351,9 @@ export const playerSkillDefinitions: Record<PlayerSkillId, PlayerSkillDefinition
     damageMultiplierPerLevel: 0.15,
     rangePerLevel: 0,
     cooldownReductionPerLevel: 400,
+    tags: ['area', 'control'],
+    unlockPlayerLevel: 2,
+    unlockMapLevel: 1,
     effect: {
       type: 'field',
       radius: 125,
@@ -266,6 +363,34 @@ export const playerSkillDefinitions: Record<PlayerSkillId, PlayerSkillDefinition
       tickIntervalMs: 600,
       slowMultiplierByLevel: [0.82, 0.72, 0.62],
     },
+  },
+  'magnetic-orbit': {
+    id: 'magnetic-orbit', icon: 'orbit', maxLevel: 3,
+    base: { id: 'magnetic-orbit', cooldownMs: 7200, windupMs: 140, castMs: 100, recoveryMs: 180, range: 0, damageMultiplier: 0.8, fixedDamage: 0, targeting: 'area' },
+    damageMultiplierPerLevel: 0.18, rangePerLevel: 0, cooldownReductionPerLevel: 300,
+    tags: ['area', 'defense'], unlockPlayerLevel: 3, unlockMapLevel: 1,
+    effect: { type: 'orbit', countByLevel: [2, 3, 4], radius: 70, radiusPerLevel: 10, durationMs: 5200, hitCooldownMs: 520 },
+  },
+  'ball-lightning': {
+    id: 'ball-lightning', icon: 'orb', maxLevel: 3,
+    base: { id: 'ball-lightning', cooldownMs: 6500, windupMs: 200, castMs: 100, recoveryMs: 200, range: 560, damageMultiplier: 0.55, fixedDamage: 0, targeting: 'direction' },
+    damageMultiplierPerLevel: 0.12, rangePerLevel: 40, cooldownReductionPerLevel: 280,
+    tags: ['projectile', 'area'], unlockPlayerLevel: 4, unlockMapLevel: 1,
+    effect: { type: 'moving-orb', speed: 105, radius: 62, radiusPerLevel: 12, durationMs: 4300, durationPerLevelMs: 500, tickIntervalMs: 450 },
+  },
+  'gravity-storm': {
+    id: 'gravity-storm', icon: 'vortex', maxLevel: 3,
+    base: { id: 'gravity-storm', cooldownMs: 10500, windupMs: 320, castMs: 120, recoveryMs: 240, range: 480, damageMultiplier: 0.5, fixedDamage: 0, targeting: 'nearest' },
+    damageMultiplierPerLevel: 0.12, rangePerLevel: 40, cooldownReductionPerLevel: 450,
+    tags: ['area', 'control'], unlockPlayerLevel: 6, unlockMapLevel: 2,
+    effect: { type: 'vortex', radius: 150, radiusPerLevel: 25, durationMs: 3200, durationPerLevelMs: 600, tickIntervalMs: 600, pullSpeedByLevel: [70, 95, 120] },
+  },
+  'tesla-turret': {
+    id: 'tesla-turret', icon: 'turret', maxLevel: 3,
+    base: { id: 'tesla-turret', cooldownMs: 12000, windupMs: 260, castMs: 120, recoveryMs: 220, range: 0, damageMultiplier: 0.75, fixedDamage: 0, targeting: 'area' },
+    damageMultiplierPerLevel: 0.15, rangePerLevel: 0, cooldownReductionPerLevel: 500,
+    tags: ['summon', 'projectile'], unlockPlayerLevel: 7, unlockMapLevel: 3,
+    effect: { type: 'turret', countByLevel: [1, 1, 2], durationMs: 7200, attackIntervalMs: 850, range: 360 },
   },
 };
 
@@ -339,11 +464,31 @@ export function getPlayerSkillEffect(
     jumpRange: effect.jumpRange + effect.jumpRangePerLevel * levelOffset,
     retainedDamage: effect.retainedDamageByLevel[levelOffset],
   };
-  return {
+  if (effect.type === 'field') return {
     type: 'field',
     radius: effect.radius + effect.radiusPerLevel * levelOffset,
     durationMs: effect.durationMs + effect.durationPerLevelMs * levelOffset,
     tickIntervalMs: effect.tickIntervalMs,
     slowMultiplier: effect.slowMultiplierByLevel[levelOffset],
+  };
+  if (effect.type === 'orbit') return {
+    type: 'orbit', count: effect.countByLevel[levelOffset],
+    radius: effect.radius + effect.radiusPerLevel * levelOffset,
+    durationMs: effect.durationMs, hitCooldownMs: effect.hitCooldownMs,
+  };
+  if (effect.type === 'moving-orb') return {
+    type: 'moving-orb', speed: effect.speed,
+    radius: effect.radius + effect.radiusPerLevel * levelOffset,
+    durationMs: effect.durationMs + effect.durationPerLevelMs * levelOffset,
+    tickIntervalMs: effect.tickIntervalMs,
+  };
+  if (effect.type === 'vortex') return {
+    type: 'vortex', radius: effect.radius + effect.radiusPerLevel * levelOffset,
+    durationMs: effect.durationMs + effect.durationPerLevelMs * levelOffset,
+    tickIntervalMs: effect.tickIntervalMs, pullSpeed: effect.pullSpeedByLevel[levelOffset],
+  };
+  return {
+    type: 'turret', count: effect.countByLevel[levelOffset], durationMs: effect.durationMs,
+    attackIntervalMs: effect.attackIntervalMs, range: effect.range,
   };
 }

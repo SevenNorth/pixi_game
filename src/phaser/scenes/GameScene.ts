@@ -68,6 +68,8 @@ import {
   PlayerAreaEffectSystem,
 } from '../../game/simulation/PlayerAreaEffectSystem';
 import type { PlayerAreaEffectEvent } from '../../game/simulation/PlayerAreaEffectSystem';
+import { PlayerConstructSystem } from '../../game/simulation/PlayerConstructSystem';
+import type { ConstructEvent } from '../../game/simulation/PlayerConstructSystem';
 import { combatBalance } from '../../game/content/combatBalance';
 import { PLAYER_INVULNERABILITY_MS, PlayerVitals } from '../../game/simulation/PlayerVitals';
 import { isSkillLoadoutSafe } from '../../game/simulation/SkillLoadoutSafety';
@@ -114,6 +116,7 @@ import {
 import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playFoodPickup } from '../view/fx/playFoodPickup';
 import { playPierceHitFx, playRapidCastingFx } from '../view/fx/playPassiveTriggerFx';
+import { createConstructView, playTurretShot } from '../view/fx/PlayerConstructView';
 import { playShieldPickup } from '../view/fx/playShieldPickup';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
 import {
@@ -223,6 +226,8 @@ export class GameScene extends Phaser.Scene {
   private playerSkills = new PlayerSkillSystem();
   private playerAreaEffects = new PlayerAreaEffectSystem();
   private playerFieldViews = new Map<string, Phaser.GameObjects.Graphics>();
+  private playerConstructs = new PlayerConstructSystem();
+  private constructViews = new Map<string, Phaser.GameObjects.Graphics>();
   private playerPassives = new PlayerPassiveSystem();
   private playerPassiveTriggers = new PlayerPassiveTriggerSystem();
   private rewardChoices = new RewardChoiceSystem();
@@ -264,6 +269,8 @@ export class GameScene extends Phaser.Scene {
     this.playerSkills.reset(this.gameplayTime);
     this.playerAreaEffects.reset();
     this.playerFieldViews.clear();
+    this.playerConstructs.reset(this.gameplayTime);
+    this.constructViews.clear();
     this.playerPassives.reset();
     this.playerPassiveTriggers.reset();
     this.rewardChoices.reset(Phaser.Math.RND.integerInRange(1, 0x7fffffff));
@@ -280,6 +287,8 @@ export class GameScene extends Phaser.Scene {
     hideSkillLoadout();
     window.addEventListener('restart-game', this.restart, { once: true });
     window.addEventListener('reward-choice-selected', this.onRewardChoiceSelected);
+    window.addEventListener('reward-choice-reroll', this.onRewardChoiceReroll);
+    window.addEventListener('reward-choice-exclude', this.onRewardChoiceExclude);
     window.addEventListener('reward-resolution-action', this.onRewardResolutionAction);
     window.addEventListener('skill-loadout-action', this.onSkillLoadoutAction);
     window.addEventListener('keydown', this.onOverlayKeyDown);
@@ -360,11 +369,14 @@ export class GameScene extends Phaser.Scene {
 
   shutdown() {
     this.clearPlayerAreaEffects();
+    this.clearPlayerConstructs();
     this.events.off(Phaser.Scenes.Events.PRE_RENDER, this.syncBulletVisuals, this);
     this.input.off(Phaser.Input.Events.POINTER_DOWN, this.onPointerDown, this);
     this.input.off(Phaser.Input.Events.POINTER_MOVE, this.onPointerMove, this);
     window.removeEventListener('restart-game', this.restart);
     window.removeEventListener('reward-choice-selected', this.onRewardChoiceSelected);
+    window.removeEventListener('reward-choice-reroll', this.onRewardChoiceReroll);
+    window.removeEventListener('reward-choice-exclude', this.onRewardChoiceExclude);
     window.removeEventListener('reward-resolution-action', this.onRewardResolutionAction);
     window.removeEventListener('skill-loadout-action', this.onSkillLoadoutAction);
     window.removeEventListener('keydown', this.onOverlayKeyDown);
@@ -419,6 +431,7 @@ export class GameScene extends Phaser.Scene {
     });
     this.handlePlayerSkillEvents(this.playerSkills.update(this.gameplayTime));
     this.handlePlayerAreaEffectEvents(this.playerAreaEffects.update(this.gameplayTime));
+    this.handleConstructEvents(this.playerConstructs.update(this.gameplayTime));
     this.updatePlayerSkillPresentation();
     updatePlayerShieldView(
       this.playerShieldView,
@@ -522,6 +535,7 @@ export class GameScene extends Phaser.Scene {
       this.updateMonsterHealthBar(monster);
       return null;
     });
+    this.updatePlayerConstructs();
 
     this.projectiles.children.each(child => {
       const projectileView = child as ProjectileView;
@@ -790,6 +804,63 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    if (effect.type === 'orbit') {
+      const orbit = this.playerConstructs.createOrbit({
+        count: effect.count, radius: effect.radius, damage: skillDamage,
+        now: this.gameplayTime, durationMs: effect.durationMs,
+        hitCooldownMs: effect.hitCooldownMs,
+      });
+      for (let index = 0; index < orbit.count; index += 1) {
+        this.constructViews.set(
+          `${orbit.id}:${index}`,
+          createConstructView(this, 'orbit', this.player.x, this.player.y),
+        );
+      }
+      return;
+    }
+
+    if (effect.type === 'moving-orb') {
+      const orb = this.playerConstructs.createMovingOrb({
+        x: this.player.x, y: this.player.y,
+        velocityX: target.direction.x * effect.speed,
+        velocityY: target.direction.y * effect.speed,
+        radius: effect.radius, damage: skillDamage,
+        now: this.gameplayTime, durationMs: effect.durationMs,
+        tickIntervalMs: effect.tickIntervalMs,
+      });
+      this.constructViews.set(orb.id, createConstructView(this, 'orb', orb.x, orb.y, orb.radius));
+      return;
+    }
+
+    if (effect.type === 'vortex') {
+      const vortex = this.playerConstructs.createVortex({
+        x: target.point.x, y: target.point.y, radius: effect.radius,
+        damage: skillDamage, pullSpeed: effect.pullSpeed,
+        now: this.gameplayTime, durationMs: effect.durationMs,
+        tickIntervalMs: effect.tickIntervalMs,
+      });
+      this.constructViews.set(
+        vortex.id,
+        createConstructView(this, 'vortex', vortex.x, vortex.y, vortex.radius),
+      );
+      return;
+    }
+
+    if (effect.type === 'turret') {
+      this.playerConstructs.createTurrets({
+        x: this.player.x, y: this.player.y, count: effect.count,
+        damage: skillDamage, range: effect.range,
+        now: this.gameplayTime, durationMs: effect.durationMs,
+        attackIntervalMs: effect.attackIntervalMs,
+      }).forEach(turret => {
+        this.constructViews.set(
+          turret.id,
+          createConstructView(this, 'turret', turret.x, turret.y),
+        );
+      });
+      return;
+    }
+
     if (effect.type === 'dash') {
       const bounds = this.physics.world.bounds;
       const originX = this.player.x;
@@ -875,6 +946,110 @@ export class GameScene extends Phaser.Scene {
     this.playerAreaEffects.reset();
     this.playerFieldViews.forEach(view => view.destroy());
     this.playerFieldViews.clear();
+  }
+
+  private handleConstructEvents(events: ConstructEvent[]) {
+    events.forEach(event => {
+      if (event.type === 'expired') {
+        this.constructViews.get(event.constructId)?.destroy();
+        this.constructViews.delete(event.constructId);
+        Array.from(this.constructViews.keys())
+          .filter(key => key.startsWith(`${event.constructId}:`))
+          .forEach(key => {
+            this.constructViews.get(key)?.destroy();
+            this.constructViews.delete(key);
+          });
+        return;
+      }
+      if (event.type === 'turret-ready') {
+        const target = this.findNearestMonster(event.state.x, event.state.y, event.state.range);
+        if (!target) return;
+        this.damageMonster(target, event.state.damage);
+        playTurretShot(this, event.state, target);
+        return;
+      }
+      this.damageMonstersInRadius(
+        event.state.x,
+        event.state.y,
+        event.state.radius,
+        event.state.damage,
+      );
+    });
+  }
+
+  private updatePlayerConstructs() {
+    this.playerConstructs.getOrbitPoints(this.player, this.gameplayTime).forEach(point => {
+      const key = `${point.orbit.id}:${point.orbitIndex}`;
+      this.constructViews.get(key)?.setPosition(point.x, point.y);
+      this.monsters.children.each(child => {
+        const monster = child as MonsterSprite;
+        if (
+          monster.active && !monster.getData('defeated')
+          && Phaser.Math.Distance.Between(point.x, point.y, monster.x, monster.y)
+            <= 14 + monster.displayWidth * 0.22
+          && this.playerConstructs.canOrbitHit(
+            point.orbit.id,
+            monster.monsterId,
+            this.gameplayTime,
+            point.orbit.hitCooldownMs,
+          )
+        ) this.damageMonster(monster, point.orbit.damage);
+        return null;
+      });
+    });
+    this.playerConstructs.getOrbs().forEach(orb => {
+      this.constructViews.get(orb.id)?.setPosition(orb.x, orb.y);
+    });
+    this.playerConstructs.getVortexes().forEach(vortex => {
+      this.monsters.children.each(child => {
+        const monster = child as MonsterSprite;
+        if (!monster.active || monster.getData('defeated')) return null;
+        const distance = Phaser.Math.Distance.Between(vortex.x, vortex.y, monster.x, monster.y);
+        if (distance <= 1 || distance > vortex.radius) return null;
+        const body = monster.body as Phaser.Physics.Arcade.Body;
+        const pull = vortex.pullSpeed * (monster.combat.kind === 'boss' ? 0.35 : monster.combat.kind === 'elite' ? 0.65 : 1);
+        body.velocity.add(new Phaser.Math.Vector2(
+          (vortex.x - monster.x) / distance * pull,
+          (vortex.y - monster.y) / distance * pull,
+        ));
+        body.velocity.limit(monster.combat.speed * 1.15);
+        return null;
+      });
+    });
+  }
+
+  private damageMonstersInRadius(x: number, y: number, radius: number, damage: number) {
+    this.monsters.children.each(child => {
+      const monster = child as MonsterSprite;
+      if (
+        monster.active && !monster.getData('defeated')
+        && Phaser.Math.Distance.Between(x, y, monster.x, monster.y)
+          <= radius + monster.displayWidth * 0.2
+      ) this.damageMonster(monster, damage);
+      return null;
+    });
+  }
+
+  private findNearestMonster(x: number, y: number, range: number) {
+    let nearest: MonsterSprite | undefined;
+    let nearestDistance = range;
+    this.monsters.children.each(child => {
+      const monster = child as MonsterSprite;
+      if (!monster.active || monster.getData('defeated')) return null;
+      const distance = Phaser.Math.Distance.Between(x, y, monster.x, monster.y);
+      if (distance <= nearestDistance) {
+        nearest = monster;
+        nearestDistance = distance;
+      }
+      return null;
+    });
+    return nearest;
+  }
+
+  private clearPlayerConstructs() {
+    this.playerConstructs.reset(this.gameplayTime);
+    this.constructViews.forEach(view => view.destroy());
+    this.constructViews.clear();
   }
 
   private updatePlayerSkillPresentation() {
@@ -1703,6 +1878,8 @@ export class GameScene extends Phaser.Scene {
     const choice = this.rewardChoices.activateNext({
       activeSkills: this.playerSkills.state.learned,
       passiveSkills: this.playerPassives.slots,
+      playerLevel: this.progression.state.level,
+      mapLevel: this.mapProgression.state.level,
     });
     if (!choice) {
       hideRewardChoice();
@@ -1718,13 +1895,40 @@ export class GameScene extends Phaser.Scene {
       this.rewardPauseActive = true;
       this.setGamePaused(true);
     }
-    showRewardChoice(choice, this.rewardChoices.state.pending.length + 1);
+    showRewardChoice(
+      choice,
+      this.rewardChoices.state.pending.length + 1,
+      this.rewardChoices.state.rerollsRemaining,
+      this.rewardChoices.state.exclusionsRemaining,
+    );
   }
 
   private onRewardChoiceSelected = (event: Event) => {
     const candidateId = (event as CustomEvent<{ candidateId?: string }>).detail?.candidateId;
     if (candidateId) this.selectReward(candidateId);
   };
+
+  private onRewardChoiceReroll = () => {
+    if (this.rewardChoices.reroll(this.getRewardChoiceContext())) {
+      this.presentNextRewardChoice();
+    }
+  };
+
+  private onRewardChoiceExclude = (event: Event) => {
+    const candidateId = (event as CustomEvent<{ candidateId?: string }>).detail?.candidateId;
+    if (candidateId && this.rewardChoices.exclude(candidateId)) {
+      this.presentNextRewardChoice();
+    }
+  };
+
+  private getRewardChoiceContext() {
+    return {
+      activeSkills: this.playerSkills.state.learned,
+      passiveSkills: this.playerPassives.slots,
+      playerLevel: this.progression.state.level,
+      mapLevel: this.mapProgression.state.level,
+    };
+  }
 
   private onRewardResolutionAction = (event: Event) => {
     const detail = (event as CustomEvent<{
@@ -2185,6 +2389,7 @@ export class GameScene extends Phaser.Scene {
     this.player.setAlpha(1);
     this.player.clearTint();
     this.clearPlayerAreaEffects();
+    this.clearPlayerConstructs();
     this.physics.pause();
     this.monsterTimer?.remove(false);
     this.foodTimer?.remove(false);

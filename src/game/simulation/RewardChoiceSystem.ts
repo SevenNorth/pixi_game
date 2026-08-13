@@ -68,6 +68,8 @@ export type RewardResolution =
 export interface RewardChoiceContext {
   activeSkills: readonly LearnedPlayerSkill[];
   passiveSkills: readonly (PassiveSkillSlot | null)[];
+  playerLevel: number;
+  mapLevel: number;
 }
 
 export interface RewardChoiceState {
@@ -76,6 +78,8 @@ export interface RewardChoiceState {
   pending: RewardSource[];
   randomState: number;
   nextChoiceId: number;
+  rerollsRemaining: number;
+  exclusionsRemaining: number;
 }
 
 const DEFAULT_RANDOM_SEED = 0x6d2b79f5;
@@ -87,6 +91,8 @@ export class RewardChoiceSystem {
     pending: [],
     randomState: DEFAULT_RANDOM_SEED,
     nextChoiceId: 1,
+    rerollsRemaining: 1,
+    exclusionsRemaining: 1,
   };
 
   reset(seed = DEFAULT_RANDOM_SEED) {
@@ -95,6 +101,8 @@ export class RewardChoiceSystem {
     this.state.pending = [];
     this.state.randomState = normalizeSeed(seed);
     this.state.nextChoiceId = 1;
+    this.state.rerollsRemaining = 1;
+    this.state.exclusionsRemaining = 1;
   }
 
   enqueue(source: RewardSource, count = 1) {
@@ -133,6 +141,28 @@ export class RewardChoiceSystem {
     return candidate;
   }
 
+  reroll(context: RewardChoiceContext) {
+    const choice = this.state.active;
+    if (!choice || this.state.resolution || this.state.rerollsRemaining <= 0) return false;
+    const previousIds = new Set(choice.candidates.map(candidate => candidate.id));
+    const next = this.generateCandidates(choice.source, context, previousIds);
+    if (next.length === 0) return false;
+    choice.candidates = next;
+    this.state.rerollsRemaining -= 1;
+    return true;
+  }
+
+  exclude(candidateId: string) {
+    const choice = this.state.active;
+    if (!choice || this.state.resolution || this.state.exclusionsRemaining <= 0) return false;
+    if (choice.candidates.length <= 1) return false;
+    const index = choice.candidates.findIndex(candidate => candidate.id === candidateId);
+    if (index < 0) return false;
+    choice.candidates.splice(index, 1);
+    this.state.exclusionsRemaining -= 1;
+    return true;
+  }
+
   beginResolution(resolution: RewardResolution) {
     const candidateExists = this.state.active?.candidates.some(
       candidate => candidate.id === resolution.candidateId,
@@ -163,8 +193,13 @@ export class RewardChoiceSystem {
     else resolution.selectedSlot = null;
   }
 
-  generateCandidates(source: RewardSource, context: RewardChoiceContext) {
-    const pool = this.buildCandidatePool(source, context);
+  generateCandidates(
+    source: RewardSource,
+    context: RewardChoiceContext,
+    excludedIds: ReadonlySet<string> = new Set(),
+  ) {
+    const pool = this.buildCandidatePool(source, context)
+      .filter(candidate => !excludedIds.has(candidate.id));
     const selected: RewardCandidate[] = [];
 
     if (source === 'level-up' || source === 'boss') {
@@ -182,6 +217,9 @@ export class RewardChoiceSystem {
         pool,
         selected,
       );
+      if (selected.some(candidate => (
+        candidate.kind === 'active-skill' && candidate.operation === 'learn'
+      ))) removeUnlearnedActiveSkills(pool);
     } else if (source === 'elite-core') {
       this.takeRandom(
         pool.filter(candidate => candidate.operation === 'upgrade'),
@@ -193,6 +231,9 @@ export class RewardChoiceSystem {
     while (selected.length < REWARD_CANDIDATE_COUNT && pool.length > 0) {
       const candidate = this.takeWeighted(pool, source);
       selected.push(candidate);
+      if (candidate.kind === 'active-skill' && candidate.operation === 'learn') {
+        removeUnlearnedActiveSkills(pool);
+      }
     }
 
     return selected;
@@ -207,6 +248,11 @@ export class RewardChoiceSystem {
       (Object.keys(playerSkillDefinitions) as PlayerSkillId[]).forEach(skillId => {
         const definition = playerSkillDefinitions[skillId];
         const learned = context.activeSkills.find(skill => skill.id === skillId);
+        if (
+          !learned
+          && (context.playerLevel < definition.unlockPlayerLevel
+            || context.mapLevel < definition.unlockMapLevel)
+        ) return;
         if (learned && learned.level >= definition.maxLevel) return;
         const currentLevel = learned?.level ?? 0;
         candidates.push({
@@ -306,6 +352,15 @@ function getCandidateWeight(candidate: RewardCandidate, source: RewardSource) {
 function removeCandidate(pool: RewardCandidate[], candidateId: string) {
   const index = pool.findIndex(candidate => candidate.id === candidateId);
   if (index >= 0) pool.splice(index, 1);
+}
+
+function removeUnlearnedActiveSkills(pool: RewardCandidate[]) {
+  for (let index = pool.length - 1; index >= 0; index -= 1) {
+    const candidate = pool[index];
+    if (candidate.kind === 'active-skill' && candidate.operation === 'learn') {
+      pool.splice(index, 1);
+    }
+  }
 }
 
 function normalizeSeed(seed: number) {

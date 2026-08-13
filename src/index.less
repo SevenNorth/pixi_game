@@ -261,6 +261,38 @@ body {
   box-shadow: inset 0 0 0 4px rgba(189, 239, 255, 0.25);
 }
 
+.active-skill-slot[data-skill="magnetic-orbit"] .skill-icon::before {
+  content: "";
+  width: 21px;
+  height: 21px;
+  border: 3px solid currentColor;
+  border-radius: 50%;
+  box-shadow: 0 0 0 4px rgba(189, 239, 255, 0.2);
+}
+
+.active-skill-slot[data-skill="ball-lightning"] .skill-icon::before {
+  content: "";
+  width: 23px;
+  height: 23px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 10px #4fdcff;
+}
+
+.active-skill-slot[data-skill="gravity-storm"] .skill-icon::before {
+  content: "@";
+}
+
+.active-skill-slot[data-skill="tesla-turret"] .skill-icon::before {
+  content: "T";
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 2px solid currentColor;
+  font-size: 16px;
+}
+
 .skill-level,
 .skill-shortcut,
 .skill-cooldown {
@@ -415,6 +447,62 @@ body {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 12px;
+}
+
+.reward-option-shell {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 7px;
+}
+
+.reward-option-shell .reward-option {
+  width: 100%;
+}
+
+.reward-option-exclude,
+.reward-tool {
+  min-height: 34px;
+  border: 1px solid rgba(121, 230, 255, 0.4);
+  border-radius: 4px;
+  background: rgba(12, 28, 36, 0.92);
+  color: rgba(244, 255, 255, 0.82);
+  font: 700 12px/1 "Trebuchet MS", Arial, sans-serif;
+  cursor: pointer;
+}
+
+.reward-option-exclude:hover:not(:disabled),
+.reward-option-exclude:focus-visible,
+.reward-tool:hover:not(:disabled),
+.reward-tool:focus-visible {
+  border-color: #ffd24a;
+  color: #fff3b0;
+  outline: none;
+}
+
+.reward-option-exclude:disabled,
+.reward-tool:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.reward-choice-tools {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.reward-tool {
+  min-width: 118px;
+  padding: 0 14px;
+}
+
+.reward-choice-exclusions {
+  color: rgba(244, 255, 255, 0.62);
+  font-size: 12px;
 }
 
 .reward-option {

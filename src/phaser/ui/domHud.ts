@@ -46,6 +46,9 @@ let rewardChoice: HTMLElement;
 let rewardChoiceSource: HTMLElement;
 let rewardChoicePending: HTMLElement;
 let rewardChoiceOptions: HTMLElement;
+let rewardChoiceReroll: HTMLButtonElement;
+let rewardChoiceExclusions: HTMLElement;
+let rewardChoiceTools: HTMLElement;
 let skillLoadout: HTMLElement;
 let skillLoadoutSlots: HTMLElement;
 let skillLoadoutSkills: HTMLElement;
@@ -106,6 +109,10 @@ export function initDomHud(container: HTMLElement) {
           <div id="reward-choice-pending" class="reward-choice-pending"></div>
         </div>
         <div id="reward-choice-options" class="reward-choice-options"></div>
+        <div id="reward-choice-tools" class="reward-choice-tools">
+          <button id="reward-choice-reroll" class="reward-tool" type="button"></button>
+          <span id="reward-choice-exclusions" class="reward-choice-exclusions"></span>
+        </div>
       </div>
     </div>
     <div id="skill-loadout" class="skill-loadout" role="dialog" aria-modal="true" aria-labelledby="skill-loadout-title" hidden>
@@ -170,6 +177,9 @@ export function initDomHud(container: HTMLElement) {
   rewardChoiceSource = root.querySelector('#reward-choice-source') as HTMLElement;
   rewardChoicePending = root.querySelector('#reward-choice-pending') as HTMLElement;
   rewardChoiceOptions = root.querySelector('#reward-choice-options') as HTMLElement;
+  rewardChoiceReroll = root.querySelector('#reward-choice-reroll') as HTMLButtonElement;
+  rewardChoiceExclusions = root.querySelector('#reward-choice-exclusions') as HTMLElement;
+  rewardChoiceTools = root.querySelector('#reward-choice-tools') as HTMLElement;
   skillLoadout = root.querySelector('#skill-loadout') as HTMLElement;
   skillLoadoutSlots = root.querySelector('#skill-loadout-slots') as HTMLElement;
   skillLoadoutSkills = root.querySelector('#skill-loadout-skills') as HTMLElement;
@@ -179,6 +189,9 @@ export function initDomHud(container: HTMLElement) {
   restartButton.style.backgroundImage = `url(${getAssetUrl('restart')})`;
   startButton.addEventListener('click', () => window.dispatchEvent(new Event('start-game')));
   restartButton.addEventListener('click', () => window.dispatchEvent(new Event('restart-game')));
+  rewardChoiceReroll.addEventListener('click', () => {
+    window.dispatchEvent(new Event('reward-choice-reroll'));
+  });
   (root.querySelector('#skill-loadout-close') as HTMLButtonElement).addEventListener(
     'click',
     () => dispatchSkillLoadoutAction('close'),
@@ -239,13 +252,26 @@ const rewardSourceKeys: Record<RewardSource, MessageKey> = {
   'post-max': 'rewardSourcePostMax',
 };
 
-export function showRewardChoice(choice: RewardChoice, pendingCount: number) {
+export function showRewardChoice(
+  choice: RewardChoice,
+  pendingCount: number,
+  rerollsRemaining: number,
+  exclusionsRemaining: number,
+) {
   rewardChoiceSource.textContent = t(rewardSourceKeys[choice.source]);
   (root.querySelector('#reward-choice-title') as HTMLElement).textContent = t('rewardChoiceTitle');
   rewardChoicePending.textContent = t('rewardChoicePending', { count: pendingCount });
   rewardChoiceOptions.replaceChildren(
-    ...choice.candidates.map((candidate, index) => createRewardOption(candidate, index)),
+    ...choice.candidates.map((candidate, index) => (
+      createRewardOption(candidate, index, exclusionsRemaining > 0)
+    )),
   );
+  rewardChoiceReroll.textContent = t('rewardRerollsLeft', { count: rerollsRemaining });
+  rewardChoiceReroll.disabled = rerollsRemaining <= 0;
+  rewardChoiceExclusions.textContent = t('rewardExclusionsLeft', {
+    count: exclusionsRemaining,
+  });
+  rewardChoiceTools.hidden = false;
   rewardChoice.hidden = false;
   (rewardChoiceOptions.querySelector('.reward-option') as HTMLButtonElement | null)?.focus();
 }
@@ -414,6 +440,7 @@ function setRewardResolutionHeader(
   detailKey?: MessageKey,
   subject?: string,
 ) {
+  rewardChoiceTools.hidden = true;
   rewardChoiceSource.textContent = subject ?? t('rewardUpgrade');
   rewardChoicePending.textContent = detailKey ? t(detailKey) : '';
   (root.querySelector('#reward-choice-title') as HTMLElement).textContent = t(titleKey);
@@ -463,8 +490,10 @@ function dispatchRewardResolution(action: string, value?: number | string) {
   }));
 }
 
-function createRewardOption(candidate: RewardCandidate, index: number) {
+function createRewardOption(candidate: RewardCandidate, index: number, canExclude: boolean) {
   const key = index + 1;
+  const container = document.createElement('div');
+  container.className = 'reward-option-shell';
   const button = document.createElement('button');
   button.type = 'button';
   button.className = 'reward-option';
@@ -488,7 +517,18 @@ function createRewardOption(candidate: RewardCandidate, index: number) {
       detail: { candidateId: candidate.id },
     }));
   });
-  return button;
+  const excludeButton = document.createElement('button');
+  excludeButton.type = 'button';
+  excludeButton.className = 'reward-option-exclude';
+  excludeButton.textContent = t('rewardExclude');
+  excludeButton.disabled = !canExclude;
+  excludeButton.addEventListener('click', () => {
+    window.dispatchEvent(new CustomEvent('reward-choice-exclude', {
+      detail: { candidateId: candidate.id },
+    }));
+  });
+  container.append(button, excludeButton);
+  return container;
 }
 
 function getRewardCandidateName(candidate: RewardCandidate) {
@@ -593,6 +633,45 @@ function getActiveSkillEffectText(skillId: PlayerSkillId, level: number) {
       radius: effect.radius,
       duration: (effect.durationMs / 1000).toFixed(1),
       slow: Math.round((1 - effect.slowMultiplier) * 100),
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  if (skillId === 'magnetic-orbit') {
+    if (effect.type !== 'orbit') return '';
+    return t('rewardMagneticOrbitEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      count: effect.count,
+      radius: effect.radius,
+      duration: (effect.durationMs / 1000).toFixed(1),
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  if (skillId === 'ball-lightning') {
+    if (effect.type !== 'moving-orb') return '';
+    return t('rewardBallLightningEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      radius: effect.radius,
+      duration: (effect.durationMs / 1000).toFixed(1),
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  if (skillId === 'gravity-storm') {
+    if (effect.type !== 'vortex') return '';
+    return t('rewardGravityStormEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      radius: effect.radius,
+      pull: effect.pullSpeed,
+      duration: (effect.durationMs / 1000).toFixed(1),
+      cooldown: (definition.cooldownMs / 1000).toFixed(2),
+    });
+  }
+  if (skillId === 'tesla-turret') {
+    if (effect.type !== 'turret') return '';
+    return t('rewardTeslaTurretEffect', {
+      damage: definition.damageMultiplier.toFixed(2),
+      count: effect.count,
+      range: effect.range,
+      duration: (effect.durationMs / 1000).toFixed(1),
       cooldown: (definition.cooldownMs / 1000).toFixed(2),
     });
   }
@@ -703,6 +782,10 @@ const playerSkillNameKeys: Record<PlayerSkillId, MessageKey> = {
   'thunder-strike': 'thunderStrike',
   'chain-lightning': 'chainLightning',
   'static-field': 'staticField',
+  'magnetic-orbit': 'magneticOrbit',
+  'ball-lightning': 'ballLightning',
+  'gravity-storm': 'gravityStorm',
+  'tesla-turret': 'teslaTurret',
 };
 
 const passiveSkillNameKeys: Record<PassiveSkillId, MessageKey> = {
