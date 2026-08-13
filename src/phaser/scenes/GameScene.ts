@@ -104,6 +104,7 @@ import {
   showMenu,
   showPassiveReplacementChoice,
   showRewardChoice,
+  showSkillEvolution,
   showSkillLoadout,
   showSkillLoadoutUnavailable,
   updateHud,
@@ -117,6 +118,7 @@ import { playMonsterDefeat } from '../view/fx/playMonsterDefeat';
 import { playFoodPickup } from '../view/fx/playFoodPickup';
 import { playPierceHitFx, playRapidCastingFx } from '../view/fx/playPassiveTriggerFx';
 import { createConstructView, playTurretShot } from '../view/fx/PlayerConstructView';
+import { playSkillEvolutionFx } from '../view/fx/playSkillEvolutionFx';
 import { playShieldPickup } from '../view/fx/playShieldPickup';
 import { playMonsterHit } from '../view/fx/playMonsterHit';
 import {
@@ -735,7 +737,7 @@ export class GameScene extends Phaser.Scene {
           damageMultiplier: effect.splashDamageMultiplier,
         },
       });
-      const visualStyle: ProjectileVisualStyle = 'skill-lightning';
+      const visualStyle: ProjectileVisualStyle = evolved ? 'evolved-lance' : 'skill-lightning';
       const visualLength = getProjectileVisualLength(visualStyle);
       playLightningSkillCast(this, this.player.x, this.player.y, target.direction);
       this.spawnProjectile(
@@ -830,7 +832,7 @@ export class GameScene extends Phaser.Scene {
       for (let index = 0; index < orbit.count; index += 1) {
         this.constructViews.set(
           `${orbit.id}:${index}`,
-          createConstructView(this, 'orbit', this.player.x, this.player.y),
+          createConstructView(this, 'orbit', this.player.x, this.player.y, 20, evolved),
         );
       }
       return;
@@ -855,7 +857,7 @@ export class GameScene extends Phaser.Scene {
         });
         this.constructViews.set(
           orb.id,
-          createConstructView(this, 'orb', orb.x, orb.y, orb.radius),
+          createConstructView(this, 'orb', orb.x, orb.y, orb.radius, evolved),
         );
       });
       return;
@@ -2084,6 +2086,7 @@ export class GameScene extends Phaser.Scene {
       this.playerSkills.state.equipped,
       this.selectedLoadoutSkillId,
       this.playerSkills.state.evolutions,
+      this.playerPassives.slots,
     );
   }
 
@@ -2145,6 +2148,8 @@ export class GameScene extends Phaser.Scene {
       if (this.playerPassives.expandSlots() <= 0) return;
     } else if (candidate.kind === 'skill-evolution') {
       if (!this.playerSkills.evolveSkill(candidate.evolutionId)) return;
+      showSkillEvolution(candidate.evolutionId);
+      playSkillEvolutionFx(this, this.player.x, this.player.y);
     } else if (candidate.kind === 'active-skill') {
       const result = this.playerSkills.learnSkill(candidate.skillId, this.gameplayTime);
       if (result.status === 'requires-forget') {

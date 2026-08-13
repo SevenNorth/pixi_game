@@ -20,9 +20,14 @@ import type {
 import {
   getPlayerSkillEffect,
   getPlayerSkillDefinition,
+  playerSkillDefinitions,
 } from '../../game/content/skills/playerSkillDefinitions';
 import { passiveSkillDefinitions } from '../../game/content/skills/passiveSkillDefinitions';
 import type { LearnedPlayerSkill } from '../../game/simulation/PlayerSkillSystem';
+import {
+  getSkillEvolutionForSkill,
+  playerSkillEvolutionDefinitions,
+} from '../../game/content/skills/playerSkillEvolutionDefinitions';
 import type { PlayerSkillEvolutionId } from '../../game/content/skills/playerSkillEvolutionDefinitions';
 
 let root: HTMLElement;
@@ -287,6 +292,7 @@ export function showSkillLoadout(
   equipped: readonly (PlayerSkillId | null)[],
   selectedSkillId: PlayerSkillId | null,
   evolutions: readonly PlayerSkillEvolutionId[],
+  passiveSkills: readonly (PassiveSkillSlot | null)[],
 ) {
   const slotKeys = ['Q', 'E', 'R'];
   skillLoadoutSlots.replaceChildren(...equipped.map((skillId, index) => {
@@ -314,6 +320,7 @@ export function showSkillLoadout(
 
   skillLoadoutSkills.replaceChildren(...learned.map((skill, index) => {
     const evolutionId = getEvolutionIdForSkill(evolutions, skill.id);
+    const evolution = getSkillEvolutionForSkill(skill.id);
     const button = document.createElement('button');
     button.type = 'button';
     button.className = 'skill-loadout-skill';
@@ -328,6 +335,11 @@ export function showSkillLoadout(
       <span class="skill-loadout-skill-effect">${evolutionId
     ? t(evolutionEffectKeys[evolutionId])
     : getActiveSkillEffectText(skill.id, skill.level)}</span>
+      ${!evolutionId && evolution ? createEvolutionRecipeText(
+    evolution.id,
+    skill.level,
+    passiveSkills.find(passive => passive?.id === evolution.requiredPassiveId)?.level ?? 0,
+  ) : ''}
       <span class="skill-loadout-skill-state">${
         equipped.includes(skill.id) ? t('skillLoadoutEquipped') : t('skillLoadoutStored')
       }</span>
@@ -347,6 +359,10 @@ export function hideSkillLoadout() {
 
 export function showSkillLoadoutUnavailable() {
   enqueueNotice(t('skillLoadoutBlocked'), t('skillLoadoutBlockedDetail'));
+}
+
+export function showSkillEvolution(evolutionId: PlayerSkillEvolutionId) {
+  enqueueNotice(t('skillEvolution'), t(evolutionNameKeys[evolutionId]));
 }
 
 function dispatchSkillLoadoutAction(action: string, value?: number | string) {
@@ -822,11 +838,37 @@ function getEvolutionIdForSkill(
   evolutions: readonly PlayerSkillEvolutionId[],
   skillId: PlayerSkillId,
 ) {
-  return evolutions.find(id => (
-    id === 'star-piercing-lance' && skillId === 'lightning-bolt'
-    || id === 'thunder-barrier' && skillId === 'magnetic-orbit'
-    || id === 'chain-storm-cloud' && skillId === 'ball-lightning'
-  ));
+  return evolutions.find(id => playerSkillEvolutionDefinitions[id].skillId === skillId);
+}
+
+function createEvolutionRecipeText(
+  evolutionId: PlayerSkillEvolutionId,
+  skillLevel: number,
+  passiveLevel: number,
+) {
+  const evolution = playerSkillEvolutionDefinitions[evolutionId];
+  const maxSkillLevel = playerSkillDefinitions[evolution.skillId].maxLevel;
+  const skillReady = skillLevel >= maxSkillLevel;
+  const passiveReady = passiveLevel >= evolution.requiredPassiveLevel;
+  return `
+    <span class="skill-evolution-recipe" data-ready="${skillReady && passiveReady}">
+      <span class="skill-evolution-recipe-title">${t('skillEvolutionRecipe', {
+    name: t(evolutionNameKeys[evolutionId]),
+  })}</span>
+      <span>${t('skillEvolutionRequirement', {
+    status: t(skillReady ? 'requirementMet' : 'requirementMissing'),
+    name: t(playerSkillNameKeys[evolution.skillId]),
+    current: skillLevel,
+    required: maxSkillLevel,
+  })}</span>
+      <span>${t('skillEvolutionRequirement', {
+    status: t(passiveReady ? 'requirementMet' : 'requirementMissing'),
+    name: t(passiveSkillNameKeys[evolution.requiredPassiveId]),
+    current: passiveLevel,
+    required: evolution.requiredPassiveLevel,
+  })}</span>
+    </span>
+  `;
 }
 
 const passiveSkillNameKeys: Record<PassiveSkillId, MessageKey> = {

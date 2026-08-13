@@ -8,16 +8,26 @@ export function createConstructView(
   x: number,
   y: number,
   radius = 20,
+  evolved = false,
 ) {
   const view = scene.add.graphics({ x, y }).setDepth(kind === 'vortex' ? 1 : 3)
     .setBlendMode(Phaser.BlendModes.ADD);
   if (kind === 'orbit') {
-    view.fillStyle(0xd6fbff, 0.95); view.fillCircle(0, 0, 8);
-    view.lineStyle(3, 0x51dfff, 0.9); view.strokeCircle(0, 0, 12);
+    view.fillStyle(evolved ? 0xfff3b0 : 0xd6fbff, 0.95); view.fillCircle(0, 0, 8);
+    view.lineStyle(3, evolved ? 0xffd24a : 0x51dfff, 0.9); view.strokeCircle(0, 0, 12);
+    if (evolved) {
+      view.lineStyle(2, 0xffffff, 0.72);
+      view.lineBetween(-15, 0, 15, 0);
+      view.lineBetween(0, -15, 0, 15);
+    }
   } else if (kind === 'orb') {
-    view.fillStyle(0x3dcfff, 0.22); view.fillCircle(0, 0, radius);
-    view.fillStyle(0xe9feff, 0.9); view.fillCircle(0, 0, radius * 0.25);
-    view.lineStyle(3, 0x75e8ff, 0.85); view.strokeCircle(0, 0, radius);
+    view.fillStyle(evolved ? 0x9f62ff : 0x3dcfff, 0.22); view.fillCircle(0, 0, radius);
+    view.fillStyle(evolved ? 0xfff3b0 : 0xe9feff, 0.9); view.fillCircle(0, 0, radius * 0.25);
+    view.lineStyle(3, evolved ? 0xc99cff : 0x75e8ff, 0.85); view.strokeCircle(0, 0, radius);
+    if (evolved) {
+      view.lineStyle(2, 0x7aeaff, 0.8);
+      view.strokeCircle(0, 0, radius * 0.62);
+    }
   } else if (kind === 'vortex') {
     view.fillStyle(0x8057d9, 0.13); view.fillCircle(0, 0, radius);
     view.lineStyle(4, 0xc187ff, 0.75); view.strokeCircle(0, 0, radius);

@@ -8,6 +8,7 @@ import type { Faction, ProjectileState } from '../../../game/simulation/Projecti
 export type ProjectileVisualStyle =
   | 'basic-lightning'
   | 'skill-lightning'
+  | 'evolved-lance'
   | 'enemy-skill'
   | 'enemy-ghost'
   | 'enemy-ember'
@@ -34,6 +35,16 @@ const PROJECTILE_STYLES = {
     widths: [13, 8, 3] as const,
     colors: [0x1b9cff, 0x65e7ff, 0xffffff] as const,
     alphas: [0.5, 0.96, 1] as const,
+  },
+  'evolved-lance': {
+    shape: 'lightning',
+    length: 112,
+    thickness: 42,
+    segments: 10,
+    jitter: 7,
+    widths: [17, 10, 4] as const,
+    colors: [0x8b5cff, 0xffd24a, 0xffffff] as const,
+    alphas: [0.55, 0.98, 1] as const,
   },
   'enemy-skill': {
     shape: 'lightning',
